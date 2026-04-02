@@ -1,0 +1,28 @@
+name: Nightly Health Check
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  health-check:
+    runs-on: ubuntu-22.04
+    container:
+      image: ghcr.io/myorg/mathcore/build:latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Full build
+        run: cmake --preset linux-release && cmake --build build/linux-release --parallel
+
+      - name: All tests
+        run: ctest --test-dir build/linux-release --output-on-failure
+
+      - name: Dependency health check
+        run: bash scripts/health-check.sh
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "Nightly build failed — external dependency may have changed"

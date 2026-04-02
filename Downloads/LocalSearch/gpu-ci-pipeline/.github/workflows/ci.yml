@@ -1,0 +1,161 @@
+name: Multi-Stage CI Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io/myorg/mathcore
+
+jobs:
+
+  compile-ubuntu-20:
+    runs-on: ubuntu-20.04
+    container:
+      image: ${{ env.REGISTRY }}/build:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: bash scripts/build.sh
+        env:
+          BUILD_TYPE: Release
+          OS_TARGET: ubuntu-20
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-ubuntu-20
+          path: build/
+
+  compile-ubuntu-22:
+    runs-on: ubuntu-22.04
+    container:
+      image: ${{ env.REGISTRY }}/build:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: bash scripts/build.sh
+        env:
+          BUILD_TYPE: Release
+          OS_TARGET: ubuntu-22
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-ubuntu-22
+          path: build/
+
+  compile-windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: bash scripts/build.sh
+        env:
+          BUILD_TYPE: Release
+          OS_TARGET: windows
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-windows
+          path: build/
+
+  compile-centos:
+    runs-on: ubuntu-22.04
+    container:
+      image: centos:7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: bash scripts/build.sh
+        env:
+          BUILD_TYPE: Release
+          OS_TARGET: centos-7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-centos
+          path: build/
+
+  test-ubuntu-20:
+    needs: compile-ubuntu-20
+    runs-on: ubuntu-20.04
+    container:
+      image: ${{ env.REGISTRY }}/test:latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: binary-ubuntu-20
+      - name: Run unit tests
+        run: bash scripts/test.sh
+        env:
+          TEST_LABEL: unit
+
+  test-ubuntu-22:
+    needs: compile-ubuntu-22
+    runs-on: ubuntu-22.04
+    container:
+      image: ${{ env.REGISTRY }}/test:latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: binary-ubuntu-22
+      - name: Run unit tests
+        run: bash scripts/test.sh
+        env:
+          TEST_LABEL: unit
+
+  test-windows:
+    needs: compile-windows
+    runs-on: windows-2022
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: binary-windows
+      - name: Run unit tests
+        run: bash scripts/test.sh
+        env:
+          TEST_LABEL: unit
+
+  test-centos:
+    needs: compile-centos
+    runs-on: ubuntu-22.04
+    container:
+      image: centos:7
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: binary-centos
+      - name: Run unit tests
+        run: bash scripts/test.sh
+        env:
+          TEST_LABEL: unit
+
+  integration-tests:
+    needs: [test-ubuntu-20, test-ubuntu-22, test-windows, test-centos]
+    runs-on: ubuntu-22.04
+    container:
+      image: ${{ env.REGISTRY }}/test:latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: binary-ubuntu-22
+      - name: Run integration tests
+        run: bash scripts/test.sh
+        env:
+          TEST_LABEL: integration
+
+  package:
+    needs: integration-tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: binary-ubuntu-22
+      - name: Package
+        run: cpack -G TGZ
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-package
+          path: "*.tar.gz"

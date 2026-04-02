@@ -1,0 +1,26 @@
+name: PR Quick Check
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  quick-check:
+    runs-on: ubuntu-22.04
+    container:
+      image: ghcr.io/myorg/mathcore/build:latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake --preset linux-release
+
+      - name: Build
+        run: cmake --build build/linux-release --parallel
+
+      - name: Unit Tests Only
+        run: ctest --test-dir build/linux-release -L unit --output-on-failure
+
+      - name: Check for forbidden compiler flags
+        run: python3 scripts/validate_flags.py build/linux-release

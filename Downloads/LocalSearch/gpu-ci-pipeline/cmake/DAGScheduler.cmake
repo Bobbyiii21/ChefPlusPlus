@@ -1,0 +1,57 @@
+if(DEFINED MATHCORE_DAG_INCLUDED)
+    return()
+endif()
+set(MATHCORE_DAG_INCLUDED TRUE)
+
+macro(dag_add_job job_name)
+    cmake_parse_arguments(DAG "" "" "DEPS" ${ARGN})
+    list(APPEND MATHCORE_DAG_ALL_JOBS ${job_name})
+    set(MATHCORE_DAG_DEPS_${job_name} "${DAG_DEPS}")
+endmacro()
+
+function(dag_compute_levels)
+    set(processed "")
+    set(level 0)
+
+    while(TRUE)
+        set(this_level "")
+
+        foreach(job IN LISTS MATHCORE_DAG_ALL_JOBS)
+            if(job IN_LIST processed)
+                continue()
+            endif()
+
+            set(ready TRUE)
+            foreach(dep IN LISTS MATHCORE_DAG_DEPS_${job})
+                if(NOT dep IN_LIST processed)
+                    set(ready FALSE)
+                    break()
+                endif()
+            endforeach()
+
+            if(ready)
+                list(APPEND this_level ${job})
+            endif()
+        endforeach()
+
+        if(NOT this_level)
+            break()
+        endif()
+
+        set(MATHCORE_DAG_LEVEL_${level} "${this_level}" PARENT_SCOPE)
+        list(APPEND processed ${this_level})
+        math(EXPR level "${level} + 1")
+    endwhile()
+
+    set(MATHCORE_DAG_NUM_LEVELS ${level} PARENT_SCOPE)
+    message(STATUS "DAG computed ${level} levels")
+endfunction()
+
+function(dag_print_schedule)
+    message(STATUS "CI Schedule:")
+    foreach(level RANGE 0 ${MATHCORE_DAG_NUM_LEVELS})
+        if(DEFINED MATHCORE_DAG_LEVEL_${level})
+            message(STATUS "  Level ${level}: ${MATHCORE_DAG_LEVEL_${level}}")
+        endif()
+    endforeach()
+endfunction()
