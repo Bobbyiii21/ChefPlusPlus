@@ -1,0 +1,17 @@
+MATHCORE_CORE_2.0 {
+    global:
+        extern "C++" {
+            mathcore::core::*;
+        };
+    local:
+        *;
+};
+
+MATHCORE_CORE_2.1 {
+    global:
+        extern "C++" {
+            mathcore::core::TensorType;
+        };
+    local:
+        *;
+} MATHCORE_CORE_2.0;

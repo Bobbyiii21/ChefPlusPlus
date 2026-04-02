@@ -1,0 +1,17 @@
+MATHCORE_ANALYTICS_2.0 {
+    global:
+        extern "C++" {
+            mathcore::analytics::*;
+        };
+    local:
+        *;
+};
+
+MATHCORE_ANALYTICS_2.1 {
+    global:
+        extern "C++" {
+            mathcore::analytics::column_means*;
+        };
+    local:
+        *;
+} MATHCORE_ANALYTICS_2.0;

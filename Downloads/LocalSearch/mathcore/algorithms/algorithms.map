@@ -1,0 +1,17 @@
+MATHCORE_ALGORITHMS_2.0 {
+    global:
+        extern "C++" {
+            mathcore::algorithms::*;
+        };
+    local:
+        *;
+};
+
+MATHCORE_ALGORITHMS_2.1 {
+    global:
+        extern "C++" {
+            mathcore::algorithms::binary_search*;
+        };
+    local:
+        *;
+} MATHCORE_ALGORITHMS_2.0;

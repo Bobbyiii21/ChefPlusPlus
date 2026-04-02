@@ -1,0 +1,101 @@
+name: MathCore CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+
+  quick-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake --preset linux-release
+      - name: Build
+        run: cmake --build build/linux-release --parallel
+      - name: Test
+        run: ctest --test-dir build/linux-release --output-on-failure
+
+  full-matrix:
+    if: github.event_name == 'push' || github.event_name == 'schedule'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-20.04, ubuntu-22.04, windows-2022]
+        compiler: [gcc, clang]
+        build_type: [Release, Debug]
+        exclude:
+          - os: windows-2022
+            compiler: clang
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}
+          path: build/
+
+  compile:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: cmake --preset linux-release && cmake --build build/linux-release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compiled-binary
+          path: build/linux-release/
+
+  unit-tests:
+    needs: compile
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: compiled-binary
+      - name: Run unit tests
+        run: ctest --test-dir . -L unit --output-on-failure
+
+  integration-tests:
+    needs: unit-tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: compiled-binary
+      - name: Run integration tests
+        run: ctest --test-dir . -L integration --output-on-failure
+
+  package:
+    needs: integration-tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: compiled-binary
+      - name: Package
+        run: cpack -G TGZ

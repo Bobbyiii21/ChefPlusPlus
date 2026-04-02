@@ -1,0 +1,52 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_SHARED_LIBS": "ON"
+      }
+    },
+    {
+      "name": "linux-release",
+      "inherits": "base",
+      "displayName": "Linux Release",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "g++"
+      }
+    },
+    {
+      "name": "linux-debug",
+      "inherits": "base",
+      "displayName": "Linux Debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "g++"
+      }
+    },
+    {
+      "name": "windows-release",
+      "inherits": "base",
+      "displayName": "Windows Release",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "cl.exe"
+      }
+    }
+  ],
+  "buildPresets": [
+    {"name": "linux-release", "configurePreset": "linux-release"},
+    {"name": "windows-release", "configurePreset": "windows-release"}
+  ],
+  "testPresets": [
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release",
+      "output": {"outputOnFailure": true}
+    }
+  ]
+}
