@@ -9,10 +9,11 @@ import { BedrockRag } from './constructs/bedrock-rag';
 import { DjangoFargateService } from './constructs/django-fargate-service';
 import { EcsLogGroup } from './constructs/ecs-log-group';
 import { FargateCluster } from './constructs/fargate-cluster';
+import { PublicApplicationLoadBalancer } from './constructs/public-application-load-balancer';
 import { WebTierSecurityGroups } from './constructs/web-tier-security-groups';
 
 /**
- * Orchestrates deploy-time parameters, networking, and a minimal public-IP Fargate service (no ALB).
+ * Orchestrates deploy-time parameters, networking, an internet-facing ALB, Bedrock RAG, and Fargate.
  * Resource implementations live under lib/constructs and lib/config.
  */
 export class ChefplusplusStack extends cdk.Stack {
@@ -34,7 +35,17 @@ export class ChefplusplusStack extends cdk.Stack {
 
     const webSecurity = new WebTierSecurityGroups(this, 'WebSecurity', {
       vpcId: parameters.vpcId.valueAsString,
+      listenerPort: CHEFPLUSPLUS_SERVICE.listenerPort,
       containerPort: CHEFPLUSPLUS_SERVICE.containerPort,
+    });
+
+    const alb = new PublicApplicationLoadBalancer(this, 'PublicAlb', {
+      vpcId: parameters.vpcId.valueAsString,
+      publicSubnetIds: parameters.publicSubnetIds.valueAsList,
+      loadBalancerSecurityGroupId: webSecurity.loadBalancerSecurityGroup.attrGroupId,
+      targetPort: CHEFPLUSPLUS_SERVICE.containerPort,
+      healthCheckPath: CHEFPLUSPLUS_SERVICE.healthCheckPath,
+      listenerPort: CHEFPLUSPLUS_SERVICE.listenerPort,
     });
 
     const cluster = new FargateCluster(this, 'Cluster', {
@@ -50,6 +61,8 @@ export class ChefplusplusStack extends cdk.Stack {
       awsRegion: this.region,
       subnets: parameters.publicSubnetIds.valueAsList,
       serviceSecurityGroupId: webSecurity.serviceSecurityGroup.attrGroupId,
+      targetGroup: alb.targetGroup,
+      httpListener: alb.httpListener,
       containerName: CHEFPLUSPLUS_SERVICE.containerName,
       containerPort: CHEFPLUSPLUS_SERVICE.containerPort,
       additionalEnvironment: [
@@ -80,10 +93,9 @@ export class ChefplusplusStack extends cdk.Stack {
       },
     });
 
-    new cdk.CfnOutput(this, 'WebContainerPort', {
-      description:
-        'HTTP port on the task public IP (http://TASK_PUBLIC_IP:PORT). Get the IP from the running task in ECS; it changes when the task is replaced.',
-      value: String(CHEFPLUSPLUS_SERVICE.containerPort),
+    new cdk.CfnOutput(this, 'LoadBalancerDnsName', {
+      description: 'Open this URL in a browser (HTTP on port 80).',
+      value: alb.loadBalancer.attrDnsName,
     });
 
     new cdk.CfnOutput(this, 'ClusterName', {
