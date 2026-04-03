@@ -7,7 +7,7 @@ const app = new cdk.App();
 
 new ChefplusplusStack(app, 'ChefplusplusStack', {
   description:
-    'Minimal ECS Fargate service for chefplusplus (Django in app/ + Gunicorn) with a task public IP (no ALB), ' +
+    'ECS Fargate service for chefplusplus (Django in app/ + Gunicorn) behind an Application Load Balancer, ' +
     'plus Bedrock Knowledge Base (S3 + OpenSearch Serverless) and Qwen3 chat access from the task role. ' +
     'Build the image from the repo root (Dockerfile copies ./app). ' +
     'Use public subnets with a route to an internet gateway so tasks can pull images and write logs.',
