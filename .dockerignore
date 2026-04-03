@@ -1,0 +1,11 @@
+.git
+**/__pycache__
+*.py[cod]
+.venv
+venv
+env
+infrastructure/node_modules
+infrastructure/cdk.out
+**/staticfiles
+**/db.sqlite3
+*.md
