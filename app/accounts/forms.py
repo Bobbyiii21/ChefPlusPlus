@@ -29,7 +29,7 @@ class CustomUserCreationForm(UserCreationForm):
 
         for field in ['email', 'username', 'password1', 'password2']:
             self.fields[field].help_text = None
-        
+
 
     class Meta:
         model = CPPUser

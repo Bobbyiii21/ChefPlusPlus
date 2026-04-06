@@ -46,6 +46,7 @@ class CPPUser(AbstractUser, PermissionsMixin):
     pfp = models.ImageField(upload_to=get_pfp_path, height_field=None, width_field=None, blank=True)
     date_joined = models.DateTimeField("date joined", default=timezone.now)
     logins = models.IntegerField(default=0)
+    is_developer = models.BooleanField(default=False)
     #nutrition_goal = models.TextField(max_length=511, blank=True)
     #allergies = models.TextField(max_length=511, blank=True)
     #diet = models.TextField(max_length=127, blank=True)
