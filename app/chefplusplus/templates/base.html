@@ -12,9 +12,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
     <link rel="stylesheet" type="text/css" href="{% static 'css/style.css' %}">
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="{% static 'js/base.js' %}"></script>
   </head>
-
-  <script src="{% static 'js/base.js' %}"></script>
 
   <body>
     {% block navbar %}
@@ -39,10 +38,12 @@
                 <a class="nav-link" href="{% url 'accounts.login' %}">Login</a>
               </li>
             {% endif %}
-            {% if request.user.is_authenticated and request.user.is_developer or request.user.is_superuser %}
+            {% if request.user.is_authenticated %}
+              {% if request.user.is_developer or request.user.is_superuser %}
               <li class="nav-item">
                 <a class="nav-link" href="{% url 'developer.index' %}">Admin Tools</a>
               </li>
+              {% endif %}
             {% endif %}
             {% if request.user.is_authenticated %}
               <li class="nav-item">
