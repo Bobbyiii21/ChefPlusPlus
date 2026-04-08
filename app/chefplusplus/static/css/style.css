@@ -219,7 +219,7 @@ a:hover {
 
 /* --- Utility: monospace --- */
 .mono {
-  font-family: 'IBM Plex Sans', sans-serif;
+  font-family: 'IBM Plex Mono', monospace;
 }
 
 /* --- Utility: muted text --- */
