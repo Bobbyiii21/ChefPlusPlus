@@ -42,6 +42,7 @@ This branch wires the home chat UI to `POST /api/chat`, backed by `app/home/vert
 - `GOOGLE_CLOUD_PROJECT`
 - `VERTEX_CHAT_MODEL`
 - `VERTEX_AI_LOCATION` (optional, defaults to `us-central1`)
+- `GCS_KNOWLEDGE_BUCKET` (used by `app/developer/gcs_bucket.py` for listing, uploading, and deleting files)
 - `VERTEX_RAG_CORPUS` (optional; when present, enables Vertex RAG retrieval)
 - `VERTEX_RAG_TOP_K` (optional; defaults to `8`)
 
@@ -49,6 +50,16 @@ This branch wires the home chat UI to `POST /api/chat`, backed by `app/home/vert
 
 - Tests in `home/tests.py` mock the AI call path, so CI does **not** need cloud credentials.
 - Runtime uses `google-cloud-aiplatform` (added to `app/requirements.txt`).
+
+## GCS file helper
+
+Frontend-facing file operations can use [app/developer/gcs_bucket.py](/Users/bobby/Dropbox/GATECH%20FILES/CS%202340/project_3/chefplusplus/app/developer/gcs_bucket.py), which exposes:
+
+- `list_files(prefix=None)`
+- `upload_file(local_file, destination_name=None, content_type=None)`
+- `delete_file(blob_name)`
+
+It reads the target bucket from `GCS_KNOWLEDGE_BUCKET` in the repo `.env` or `app/.env`.
 
 ## Docker
 
