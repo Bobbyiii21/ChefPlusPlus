@@ -50,6 +50,36 @@ function appendMessage(role, content, isTyping = false) {
   return msg;
 }
 
+function typeMessage(role, content) {
+  if (emptyState) emptyState.style.display = 'none';
+
+  const msg = document.createElement('div');
+  msg.className = `message ${role}`;
+
+  const label = document.createElement('div');
+  label.className = 'message-label';
+  label.textContent = 'chef++';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'message-bubble';
+
+  msg.appendChild(label);
+  msg.appendChild(bubble);
+  messagesWrap.appendChild(msg);
+
+  let i = 0;
+  const speed = 10; // ms per character
+  function tick() {
+    if (i < content.length) {
+      bubble.textContent += content[i++];
+      messagesWrap.scrollTop = messagesWrap.scrollHeight;
+      setTimeout(tick, speed);
+    }
+  }
+  tick();
+  return msg;
+}
+
 function sendMessage() {
   const text = input.value.trim();
   if (!text) return;
@@ -66,6 +96,6 @@ function sendMessage() {
 
   setTimeout(() => {
     typingMsg.remove();
-    appendMessage('assistant', '(AI response will appear here once connected to the RAG model.)');
+    typeMessage('assistant', '(AI response will appear here once connected to the RAG model.)');
   }, 1200);
 }
