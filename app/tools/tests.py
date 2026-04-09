@@ -123,6 +123,18 @@ class TestConvenienceAccessors(unittest.TestCase):
             "projects/p/locations/l/ragCorpora/123",
         )
 
+    @mock.patch.dict(os.environ, {"GCS_BUCKET": "my-bucket"}, clear=False)
+    def test_gcs_bucket(self):
+        from tools.env_config import gcs_bucket
+        self.assertEqual(gcs_bucket(), "my-bucket")
+
+    @mock.patch.dict(os.environ, {}, clear=False)
+    def test_gcs_bucket_missing_raises(self):
+        from tools.env_config import gcs_bucket, EnvVarMissing
+        os.environ.pop("GCS_BUCKET", None)
+        with self.assertRaises(EnvVarMissing):
+            gcs_bucket()
+
 
 class TestDotenvFallback(unittest.TestCase):
     """Verify that dotenv loading is attempted when os.environ misses a var."""
@@ -417,6 +429,228 @@ class TestRagFilesNoCorpus(unittest.TestCase):
         os.environ.pop("VERTEX_RAG_CORPUS", None)
         with self.assertRaises(RuntimeError):
             self._rf.list_files()
+
+
+# ====================================================================
+# gcs_storage tests
+# ====================================================================
+
+
+class TestGcsStorageUploadFile(unittest.TestCase):
+    """gcs_storage.upload_file with mocked GCS client."""
+
+    _ENV = {
+        "GOOGLE_CLOUD_PROJECT": "test-project",
+        "GCS_BUCKET": "test-bucket",
+    }
+
+    def setUp(self):
+        import tools.gcs_storage as gs
+        self._gs = gs
+        gs._client = None
+        import tools.env_config as ec
+        ec._dotenv_loaded = False
+
+    @mock.patch("tools.gcs_storage.storage")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_upload_file_success(self, mock_storage):
+        mock_blob = mock.MagicMock()
+        mock_bucket = mock.MagicMock()
+        mock_bucket.blob.return_value = mock_blob
+        mock_bucket.name = "test-bucket"
+        mock_storage.Client.return_value.bucket.return_value = mock_bucket
+
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
+            f.write(b"hello")
+            tmp_path = f.name
+
+        try:
+            uri = self._gs.upload_file(tmp_path)
+            self.assertEqual(uri, f"gs://test-bucket/{os.path.basename(tmp_path)}")
+            mock_blob.upload_from_filename.assert_called_once()
+        finally:
+            os.unlink(tmp_path)
+
+    @mock.patch("tools.gcs_storage.storage")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_upload_file_custom_destination(self, mock_storage):
+        mock_blob = mock.MagicMock()
+        mock_bucket = mock.MagicMock()
+        mock_bucket.blob.return_value = mock_blob
+        mock_bucket.name = "test-bucket"
+        mock_storage.Client.return_value.bucket.return_value = mock_bucket
+
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            f.write(b"pdf content")
+            tmp_path = f.name
+
+        try:
+            uri = self._gs.upload_file(
+                tmp_path,
+                destination_name="docs/report.pdf",
+                content_type="application/pdf",
+            )
+            self.assertEqual(uri, "gs://test-bucket/docs/report.pdf")
+            mock_bucket.blob.assert_called_with("docs/report.pdf")
+            mock_blob.upload_from_filename.assert_called_once_with(
+                tmp_path, content_type="application/pdf"
+            )
+        finally:
+            os.unlink(tmp_path)
+
+    def test_upload_file_not_found(self):
+        with self.assertRaises(FileNotFoundError):
+            self._gs.upload_file("/nonexistent/path/file.txt")
+
+
+class TestGcsStorageUploadFromString(unittest.TestCase):
+    """gcs_storage.upload_from_string with mocked GCS client."""
+
+    _ENV = {
+        "GOOGLE_CLOUD_PROJECT": "test-project",
+        "GCS_BUCKET": "test-bucket",
+    }
+
+    def setUp(self):
+        import tools.gcs_storage as gs
+        self._gs = gs
+        gs._client = None
+        import tools.env_config as ec
+        ec._dotenv_loaded = False
+
+    @mock.patch("tools.gcs_storage.storage")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_upload_from_string(self, mock_storage):
+        mock_blob = mock.MagicMock()
+        mock_bucket = mock.MagicMock()
+        mock_bucket.blob.return_value = mock_blob
+        mock_bucket.name = "test-bucket"
+        mock_storage.Client.return_value.bucket.return_value = mock_bucket
+
+        uri = self._gs.upload_from_string(
+            b"raw data", "data/output.bin"
+        )
+        self.assertEqual(uri, "gs://test-bucket/data/output.bin")
+        mock_blob.upload_from_string.assert_called_once_with(
+            b"raw data", content_type="application/octet-stream"
+        )
+
+    def test_upload_from_string_empty_name_raises(self):
+        with self.assertRaises(ValueError):
+            self._gs.upload_from_string(b"x", "")
+
+
+class TestGcsStorageListFiles(unittest.TestCase):
+    """gcs_storage.list_files with mocked GCS client."""
+
+    _ENV = {
+        "GOOGLE_CLOUD_PROJECT": "test-project",
+        "GCS_BUCKET": "test-bucket",
+    }
+
+    def setUp(self):
+        import tools.gcs_storage as gs
+        self._gs = gs
+        gs._client = None
+        import tools.env_config as ec
+        ec._dotenv_loaded = False
+
+    @mock.patch("tools.gcs_storage.storage")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_list_files(self, mock_storage):
+        blob1 = mock.MagicMock()
+        blob1.name = "file1.txt"
+        blob2 = mock.MagicMock()
+        blob2.name = "uploads/file2.pdf"
+        mock_bucket = mock.MagicMock()
+        mock_bucket.list_blobs.return_value = [blob1, blob2]
+        mock_storage.Client.return_value.bucket.return_value = mock_bucket
+
+        result = self._gs.list_files()
+        self.assertEqual(result, ["file1.txt", "uploads/file2.pdf"])
+
+    @mock.patch("tools.gcs_storage.storage")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_list_files_with_prefix(self, mock_storage):
+        blob = mock.MagicMock()
+        blob.name = "uploads/file2.pdf"
+        mock_bucket = mock.MagicMock()
+        mock_bucket.list_blobs.return_value = [blob]
+        mock_storage.Client.return_value.bucket.return_value = mock_bucket
+
+        result = self._gs.list_files(prefix="uploads/")
+        mock_bucket.list_blobs.assert_called_with(prefix="uploads/")
+        self.assertEqual(result, ["uploads/file2.pdf"])
+
+    @mock.patch("tools.gcs_storage.storage")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_list_files_empty(self, mock_storage):
+        mock_bucket = mock.MagicMock()
+        mock_bucket.list_blobs.return_value = []
+        mock_storage.Client.return_value.bucket.return_value = mock_bucket
+
+        self.assertEqual(self._gs.list_files(), [])
+
+
+class TestGcsStorageDeleteFile(unittest.TestCase):
+    """gcs_storage.delete_file with mocked GCS client."""
+
+    _ENV = {
+        "GOOGLE_CLOUD_PROJECT": "test-project",
+        "GCS_BUCKET": "test-bucket",
+    }
+
+    def setUp(self):
+        import tools.gcs_storage as gs
+        self._gs = gs
+        gs._client = None
+        import tools.env_config as ec
+        ec._dotenv_loaded = False
+
+    @mock.patch("tools.gcs_storage.storage")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_delete_file(self, mock_storage):
+        mock_blob = mock.MagicMock()
+        mock_bucket = mock.MagicMock()
+        mock_bucket.blob.return_value = mock_blob
+        mock_bucket.name = "test-bucket"
+        mock_storage.Client.return_value.bucket.return_value = mock_bucket
+
+        self._gs.delete_file("uploads/old.txt")
+        mock_bucket.blob.assert_called_with("uploads/old.txt")
+        mock_blob.delete.assert_called_once()
+
+    def test_delete_empty_name_raises(self):
+        with self.assertRaises(ValueError):
+            self._gs.delete_file("")
+
+
+class TestGcsStorageMissingBucket(unittest.TestCase):
+    """Verify error when GCS_BUCKET is unset."""
+
+    def setUp(self):
+        import tools.gcs_storage as gs
+        self._gs = gs
+        gs._client = None
+        import tools.env_config as ec
+        ec._dotenv_loaded = False
+
+    @mock.patch("tools.gcs_storage.storage")
+    @mock.patch.dict(os.environ, {"GOOGLE_CLOUD_PROJECT": "p"}, clear=False)
+    def test_upload_no_bucket_raises(self, mock_storage):
+        os.environ.pop("GCS_BUCKET", None)
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
+            f.write(b"x")
+            tmp_path = f.name
+        try:
+            from tools.env_config import EnvVarMissing
+            with self.assertRaises(EnvVarMissing):
+                self._gs.upload_file(tmp_path)
+        finally:
+            os.unlink(tmp_path)
 
 
 if __name__ == "__main__":

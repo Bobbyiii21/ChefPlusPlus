@@ -51,6 +51,7 @@ All env-var access is centralised in `app/tools/env_config.py`. Variables are re
 | `VERTEX_CHAT_MODEL` | **yes** | — | Gemini model name (e.g. `gemini-2.0-flash`) |
 | `VERTEX_RAG_CORPUS` | **yes** (for RAG) | — | Full corpus resource name |
 | `VERTEX_RAG_TOP_K` | no | `8` | Number of RAG retrieval results |
+| `GCS_BUCKET` | **yes** (for uploads) | — | Google Cloud Storage bucket name |
 
 Import helpers instead of using `os.environ` directly:
 
@@ -105,6 +106,29 @@ print(f"Imported {result.imported_count} file(s)")
 delete_file("projects/my-proj/locations/us-central1/ragCorpora/111/ragFiles/222")
 ```
 
+### Cloud Storage uploads — `app/tools/gcs_storage.py`
+
+Upload, list, and delete files in the GCS bucket set by `GCS_BUCKET`.
+
+```python
+from tools.gcs_storage import upload_file, upload_from_string, list_files, delete_file
+
+# Upload a local file (returns gs:// URI)
+uri = upload_file("/tmp/menu.pdf", destination_name="docs/menu.pdf")
+
+# Upload raw bytes / string directly
+uri = upload_from_string(b"hello world", "notes/greeting.txt", content_type="text/plain")
+
+# List objects (optionally filtered by prefix)
+for name in list_files(prefix="docs/"):
+    print(name)
+
+# Delete an object
+delete_file("docs/menu.pdf")
+```
+
+A `.env.example` file is included at the repo root with every required and optional variable.
+
 ### Running tests
 
 From the `app/` directory:
@@ -133,6 +157,7 @@ Bootstrap once per account/region: `npx cdk bootstrap aws://ACCOUNT/REGION`. See
 | Path | Role |
 |------|------|
 | `app/` | Django (`manage.py`, `requirements.txt`) |
-| `app/tools/` | Vertex AI toolkit (env config, chat, RAG files, tests) |
+| `app/tools/` | Vertex AI toolkit (env config, chat, RAG files, GCS storage, tests) |
+| `.env.example` | Template listing all required / optional env vars |
 | `Dockerfile` | Image for Gunicorn + WhiteNoise |
 | `infrastructure/` | CDK TypeScript (`lib/config/`, `lib/constructs/`) |

@@ -96,3 +96,8 @@ def vertex_chat_model() -> str:
 def vertex_rag_corpus() -> Optional[str]:
     """``VERTEX_RAG_CORPUS`` — optional, ``None`` when unset."""
     return get_env("VERTEX_RAG_CORPUS")
+
+
+def gcs_bucket() -> str:
+    """``GCS_BUCKET`` — required for Cloud Storage uploads."""
+    return require_env("GCS_BUCKET")
