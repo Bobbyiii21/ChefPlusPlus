@@ -98,6 +98,11 @@ def vertex_rag_corpus() -> Optional[str]:
     return get_env("VERTEX_RAG_CORPUS")
 
 
+def vertex_text_cleaner_model() -> str:
+    """``VERTEX_TEXT_CLEANER_MODEL`` — defaults to ``gemini-2.0-flash-lite``."""
+    return get_env("VERTEX_TEXT_CLEANER_MODEL", "gemini-2.0-flash-lite")
+
+
 def gcs_bucket() -> str:
     """``GCS_BUCKET`` — required for Cloud Storage uploads."""
     return require_env("GCS_BUCKET")

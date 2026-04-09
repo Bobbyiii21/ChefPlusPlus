@@ -653,5 +653,152 @@ class TestGcsStorageMissingBucket(unittest.TestCase):
             os.unlink(tmp_path)
 
 
+# ====================================================================
+# text_cleaner tests
+# ====================================================================
+
+
+class TestCleanTextEmptyInput(unittest.TestCase):
+    """text_cleaner.clean_text rejects empty / blank input."""
+
+    def test_empty_string(self):
+        from tools.text_cleaner import clean_text
+        result = clean_text("")
+        self.assertEqual(result["text"], "")
+        self.assertEqual(result["error"], "Input text is required.")
+
+    def test_whitespace_only(self):
+        from tools.text_cleaner import clean_text
+        result = clean_text("    \n\t  ")
+        self.assertEqual(result["error"], "Input text is required.")
+
+    def test_none_input(self):
+        from tools.text_cleaner import clean_text
+        result = clean_text(None)
+        self.assertEqual(result["error"], "Input text is required.")
+
+
+class TestCleanTextSuccess(unittest.TestCase):
+    """text_cleaner.clean_text with mocked Vertex SDK."""
+
+    _ENV = {
+        "GOOGLE_CLOUD_PROJECT": "test-project",
+        "VERTEX_AI_LOCATION": "us-central1",
+    }
+
+    def setUp(self):
+        import tools.text_cleaner as tc
+        self._tc = tc
+        tc._cached_model = None
+        tc._vertex_inited = False
+        import tools.env_config as ec
+        ec._dotenv_loaded = False
+
+    @mock.patch("tools.text_cleaner.vertexai")
+    @mock.patch("tools.text_cleaner.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_successful_clean(self, MockModel, mock_vertexai):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = "Cleaned text about nutrition."
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        result = self._tc.clean_text("  Lots   of   messy   text  here  ")
+        self.assertEqual(result["text"], "Cleaned text about nutrition.")
+        self.assertEqual(result["error"], "")
+
+    @mock.patch("tools.text_cleaner.vertexai")
+    @mock.patch("tools.text_cleaner.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_no_candidates(self, MockModel, mock_vertexai):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = []
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        result = self._tc.clean_text("Some text")
+        self.assertIn("No response", result["error"])
+        self.assertEqual(result["text"], "")
+
+    @mock.patch("tools.text_cleaner.vertexai")
+    @mock.patch("tools.text_cleaner.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_safety_filter_valueerror(self, MockModel, mock_vertexai):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = mock.PropertyMock(side_effect=ValueError("blocked"))
+        type(mock_response).text = mock.PropertyMock(side_effect=ValueError("blocked"))
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        result = self._tc.clean_text("Some text")
+        self.assertIn("safety filter", result["error"])
+
+    @mock.patch("tools.text_cleaner.vertexai")
+    @mock.patch("tools.text_cleaner.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_uses_system_prompt(self, MockModel, mock_vertexai):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = "Cleaned."
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        self._tc.clean_text("raw input")
+        call_kwargs = MockModel.call_args.kwargs
+        self.assertIn("RAG", call_kwargs.get("system_instruction", ""))
+
+    @mock.patch.dict(os.environ, {}, clear=False)
+    def test_missing_project_env(self):
+        os.environ.pop("GOOGLE_CLOUD_PROJECT", None)
+        result = self._tc.clean_text("some text")
+        self.assertIn("GOOGLE_CLOUD_PROJECT", result["error"])
+
+
+class TestCleanTextDefaultModel(unittest.TestCase):
+    """Verify the default model used by text_cleaner."""
+
+    _ENV = {
+        "GOOGLE_CLOUD_PROJECT": "test-project",
+        "VERTEX_AI_LOCATION": "us-central1",
+    }
+
+    def setUp(self):
+        import tools.text_cleaner as tc
+        self._tc = tc
+        tc._cached_model = None
+        tc._vertex_inited = False
+        import tools.env_config as ec
+        ec._dotenv_loaded = False
+
+    @mock.patch("tools.text_cleaner.vertexai")
+    @mock.patch("tools.text_cleaner.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_default_model_is_flash_lite(self, MockModel, mock_vertexai):
+        os.environ.pop("VERTEX_TEXT_CLEANER_MODEL", None)
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = "cleaned"
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        self._tc.clean_text("test")
+        call_kwargs = MockModel.call_args.kwargs
+        self.assertEqual(call_kwargs["model_name"], "gemini-2.0-flash-lite")
+
+    @mock.patch("tools.text_cleaner.vertexai")
+    @mock.patch("tools.text_cleaner.GenerativeModel")
+    @mock.patch.dict(
+        os.environ,
+        {**_ENV, "VERTEX_TEXT_CLEANER_MODEL": "gemini-1.5-flash"},
+        clear=False,
+    )
+    def test_custom_model_override(self, MockModel, mock_vertexai):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = "cleaned"
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        self._tc.clean_text("test")
+        call_kwargs = MockModel.call_args.kwargs
+        self.assertEqual(call_kwargs["model_name"], "gemini-1.5-flash")
+
+
 if __name__ == "__main__":
     unittest.main()
