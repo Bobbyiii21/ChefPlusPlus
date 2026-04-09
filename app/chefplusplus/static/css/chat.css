@@ -310,6 +310,123 @@ a.sidebar-logo:hover {
   color: var(--text-muted);
   font-style: italic;
 }
+
+/* --- Markdown inside assistant bubbles --- */
+.message-bubble.markdown-body {
+  animation: fadeUp 0.25s ease;
+}
+
+.message-bubble.markdown-body p {
+  margin: 0 0 0.6em;
+}
+
+.message-bubble.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+
+.message-bubble.markdown-body h1,
+.message-bubble.markdown-body h2,
+.message-bubble.markdown-body h3,
+.message-bubble.markdown-body h4 {
+  font-family: 'DM Serif Display', serif;
+  font-weight: 400;
+  margin: 1em 0 0.4em;
+  line-height: 1.3;
+}
+
+.message-bubble.markdown-body h1:first-child,
+.message-bubble.markdown-body h2:first-child,
+.message-bubble.markdown-body h3:first-child {
+  margin-top: 0;
+}
+
+.message-bubble.markdown-body h1 { font-size: 1.2rem; }
+.message-bubble.markdown-body h2 { font-size: 1.05rem; }
+.message-bubble.markdown-body h3 { font-size: 0.95rem; }
+
+.message-bubble.markdown-body ul,
+.message-bubble.markdown-body ol {
+  margin: 0.4em 0 0.6em;
+  padding-left: 1.4em;
+}
+
+.message-bubble.markdown-body li {
+  margin-bottom: 0.25em;
+}
+
+.message-bubble.markdown-body li::marker {
+  color: var(--text-muted);
+}
+
+.message-bubble.markdown-body strong {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.message-bubble.markdown-body em {
+  font-style: italic;
+}
+
+.message-bubble.markdown-body code {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8em;
+  background: var(--surface);
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+}
+
+.message-bubble.markdown-body pre {
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  margin: 0.6em 0;
+}
+
+.message-bubble.markdown-body pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.message-bubble.markdown-body blockquote {
+  border-left: 3px solid var(--border);
+  margin: 0.6em 0;
+  padding: 0.2em 0 0.2em 0.8em;
+  color: var(--text-muted);
+}
+
+.message-bubble.markdown-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.6em 0;
+  font-size: 0.8rem;
+}
+
+.message-bubble.markdown-body th,
+.message-bubble.markdown-body td {
+  border: 1px solid var(--border);
+  padding: 0.35em 0.6em;
+  text-align: left;
+}
+
+.message-bubble.markdown-body th {
+  background: var(--surface);
+  font-weight: 600;
+}
+
+.message-bubble.markdown-body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0.8em 0;
+}
+
+.message-bubble.markdown-body a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
  
 /* --- Typing indicator --- */
 .typing-dots {
