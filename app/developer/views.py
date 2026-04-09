@@ -17,6 +17,7 @@ from tools.gcs_storage import (
     delete_file as gcs_delete_file,
 )
 from tools.rag_files import (
+    list_files as rag_list_files,
     import_files as rag_import_files,
     delete_file as rag_delete_file,
 )
@@ -47,18 +48,18 @@ def _validate_file_extension(uploaded_file):
     return True, ext
 
 
-def _upload_to_gcs_and_rag(gcs_uri, db_file):
+def _import_to_rag(gcs_uri, db_file):
     """Import a GCS URI into the RAG corpus and store the resource name."""
     try:
+        existing_names = {f.name for f in rag_list_files()}
         result = rag_import_files([gcs_uri])
-        if result.raw_response:
-            from vertexai import rag as _rag
-            rag_files = list(_rag.list_files(
-                corpus_name=os.environ.get('VERTEX_RAG_CORPUS', '')
-            ))
-            if rag_files:
-                db_file.rag_resource_name = getattr(rag_files[-1], 'name', '')
-                db_file.save(update_fields=['rag_resource_name'])
+        if result.imported_count > 0:
+            current_files = rag_list_files()
+            for f in current_files:
+                if f.name not in existing_names:
+                    db_file.rag_resource_name = f.name
+                    db_file.save(update_fields=['rag_resource_name'])
+                    break
     except Exception:
         logger.exception("RAG import failed for %s", gcs_uri)
 
@@ -97,6 +98,7 @@ def database_files(request):
                     db_file.file = uploaded_file
                     db_file.save()
 
+                    tmp_path = None
                     try:
                         with tempfile.NamedTemporaryFile(
                             delete=False, suffix=ext
@@ -109,13 +111,14 @@ def database_files(request):
                         db_file.gcs_uri = gcs_uri
                         db_file.save(update_fields=['gcs_uri'])
 
-                        _upload_to_gcs_and_rag(gcs_uri, db_file)
+                        _import_to_rag(gcs_uri, db_file)
                         success = f'File "{name}" uploaded successfully.'
                     except Exception as exc:
                         logger.exception("File upload failed")
+                        db_file.delete()
                         error = f'Upload failed: {exc}'
                     finally:
-                        if 'tmp_path' in locals():
+                        if tmp_path and os.path.exists(tmp_path):
                             os.unlink(tmp_path)
 
         elif subfield == 'text_add':
@@ -146,10 +149,11 @@ def database_files(request):
                     db_file.gcs_uri = gcs_uri
                     db_file.save(update_fields=['gcs_uri'])
 
-                    _upload_to_gcs_and_rag(gcs_uri, db_file)
+                    _import_to_rag(gcs_uri, db_file)
                     success = f'Text source "{name}" uploaded successfully.'
                 except Exception as exc:
                     logger.exception("Text upload failed")
+                    db_file.delete()
                     error = f'Upload failed: {exc}'
 
     template_data = {

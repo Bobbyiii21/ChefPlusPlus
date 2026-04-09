@@ -54,7 +54,7 @@
             </a>
             {% endif %}
             <form method="POST" action="{% url 'developer.files.delete' file.pk %}" class="d-inline-block ms-2 mt-1"
-                  onsubmit="return confirm('Delete &quot;{{ file.name }}&quot;? This will also remove it from the RAG model.');">
+                  onsubmit="return confirm('Delete \x22{{ file.name|escapejs }}\x22? This will also remove it from the RAG model.');">
               {% csrf_token %}
               <button type="submit" class="btn-delete d-inline-flex align-items-center gap-1">
                 <span class="material-symbols-outlined" style="font-size:1rem;">delete</span>
