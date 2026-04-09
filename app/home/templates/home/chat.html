@@ -17,7 +17,7 @@
       </button>
     </div>
     <div class="sidebar-footer">
-      <button id="sidebarThemeToggle" class="sidebar-theme-toggle" aria-label="Toggle light/dark mode">
+      <button id="sidebarThemeToggle" class="sidebar-theme-toggle" aria-label="Toggle light/dark mode" onclick="changeTheme()">
         <span class="material-symbols-outlined" id="sidebarThemeIcon">dark_mode</span>
       </button>
     </div>
@@ -94,13 +94,6 @@
   }
 
   syncSidebarIcon();
-
-  sidebarThemeBtn.addEventListener('click', () => {
-    const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('theme', next);
-    sidebarThemeIcon.textContent = next === 'dark' ? 'light_mode' : 'dark_mode';
-  });
 </script>
 
 {% endblock content %}

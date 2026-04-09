@@ -14,6 +14,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
   </head>
 
+  <script src="{% static 'js/base.js' %}"></script>
+
   <body>
     {% block navbar %}
     <nav class="navbar navbar-expand-lg" id="mainNav">
@@ -39,7 +41,7 @@
             {% endif %}
             {% if request.user.is_authenticated and request.user.is_developer or request.user.is_superuser %}
               <li class="nav-item">
-                <a class="nav-link" href="{% url 'developer.index' %}">Dev Tools</a>
+                <a class="nav-link" href="{% url 'developer.index' %}">Admin Tools</a>
               </li>
             {% endif %}
             {% if request.user.is_authenticated %}
@@ -48,7 +50,7 @@
               </li>
             {% endif %}
             <li class="nav-item ms-lg-2">
-              <button id="themeToggle" class="btn btn-sm btn-outline-secondary border-0" aria-label="Toggle light/dark mode">
+              <button id="themeToggle" class="btn btn-sm btn-outline-secondary border-0" aria-label="Toggle light/dark mode" onclick="changeTheme()">
                 <span class="material-symbols-outlined" id="themeIcon" style="font-size:1.25rem;vertical-align:middle;">dark_mode</span>
               </button>
             </li>
@@ -56,22 +58,6 @@
         </div>
       </div>
     </nav>
-    <script>
-      (function () {
-        const root = document.documentElement;
-        const btn = document.getElementById('themeToggle');
-        const icon = document.getElementById('themeIcon');
-        const saved = localStorage.getItem('theme') || 'light';
-        root.setAttribute('data-theme', saved);
-        icon.textContent = saved === 'dark' ? 'light_mode' : 'dark_mode';
-        btn.addEventListener('click', function () {
-          const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-          root.setAttribute('data-theme', next);
-          localStorage.setItem('theme', next);
-          icon.textContent = next === 'dark' ? 'light_mode' : 'dark_mode';
-        });
-      })();
-    </script>
     {% endblock navbar %}
 
     <main>
@@ -102,9 +88,9 @@
           <div class="col-md-3 col-lg-3 col-xl-3 mx-auto mb-4">
             <b>CONTACT</b>
             <hr />
-            <p><i class="fas fa-home me-2"></i> 123 Bobby Dodd Way, Atlanta, GA</p>
-            <p><i class="fas fa-envelope me-2"></i> info@cpp.com</p>
-            <p><i class="fas fa-phone me-2"></i> +1 404-470-678</p>
+            <p><i class="fas fa-home me-2"></i> 2763 Gordon Ramsay Blvd, Atlantic City, NJ</p>
+            <p><i class="fas fa-envelope me-2"></i> noreply@chefplusplus.com</p>
+            <p><i class="fas fa-phone me-2"></i> 123-456-7890</p>
           </div>
         </div>
       </div>

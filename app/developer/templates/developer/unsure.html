@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="developer-hero py-5">
+  <div class="container">
+    <div class="row align-items-center gy-4">
+      <div class="col-lg-8">
+        <span class="eyebrow">Unsure question handling</span>
+        <h1>Respond dynamically based on the type of uncertain question.</h1>
+        <p class="lead">This page helps developers define response behavior for user questions that are ambiguous, incomplete, or missing a clear intent.</p>
+        <div class="hero-buttons mt-4">
+          <a class="btn btn-primary btn-lg me-3" href="#response-types">Explore response types</a>
+          <a class="btn btn-outline-dark btn-lg" href="{% url 'developer.index' %}">Back to dashboard</a>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="developer-summary-card p-4 rounded-4 shadow-sm bg-white">
+          <h2 class="mb-3">Dynamic response modes</h2>
+          <ul class="developer-list list-unstyled mb-0">
+            <li>• Clarify unclear user intent</li>
+            <li>• Redirect to knowledge sources</li>
+            <li>• Provide fallback guidance</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="developer-files py-5 bg-light" id="response-types">
+  <div class="container">
+    <div class="row gy-4">
+      <div class="col-md-6">
+        <div class="feature-card p-4 rounded-4 h-100">
+          <h3>Clarification</h3>
+          <p>Ask follow-up questions to narrow down the user's intent when their request is ambiguous.</p>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="feature-card p-4 rounded-4 h-100">
+          <h3>Resource suggestion</h3>
+          <p>Suggest relevant documents, recipes, or FAQs when the question is uncertain but related to a known topic.</p>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="feature-card p-4 rounded-4 h-100">
+          <h3>Fallback support</h3>
+          <p>Offer useful advice and a safe default response when the system cannot confidently answer.</p>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="feature-card p-4 rounded-4 h-100">
+          <h3>Actionable follow-up</h3>
+          <p>Help user refine their question or provide examples to improve the next query.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock content %}

@@ -6,7 +6,7 @@ from .models import DatabaseFile
 
 
 def allowed_visitor(user: CPPUser):
-    return user.is_developer or user.is_superuser
+    return user.is_superuser
 
 @login_required
 def index(request):

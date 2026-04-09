@@ -7,7 +7,8 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&display=swap');
 
 /* --- Design tokens --- */
-:root[data-theme="light"] {
+:root[data-theme="light"],
+:root {
   --text: #130d07;
   --background: #fcf8f3;
   --primary: #c68e5d;
@@ -31,7 +32,7 @@
   --text-muted: #a09282;
 }
 
-/* Default to light if no theme set */
+/* Default to light if no theme set, handled above
 :root {
   --text: #130d07;
   --background: #fcf8f3;
@@ -42,7 +43,7 @@
   --surface: #ede8e2;
   --border: #d4c9bb;
   --text-muted: #130d07;
-}
+} */
 
 /* --- Navbar --- */
 #mainNav {
