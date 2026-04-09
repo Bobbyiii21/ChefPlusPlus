@@ -1,9 +1,14 @@
+import logging
+
 from django.contrib.auth import login as auth_login, authenticate, logout as auth_logout
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
 from accounts.models import CPPUser
 from .models import DatabaseFile
 from tools.gcs_storage import upload_file as gcs_upload_file
+from tools.rag_files import import_files as rag_import_files
+
+logger = logging.getLogger(__name__)
 
 
 def allowed_visitor(user: CPPUser):
@@ -21,7 +26,7 @@ def index(request):
 def database_files(request):
     if not allowed_visitor(request.user):
         return redirect('home.index')
-    
+
     if request.method == 'POST':
         if request.POST['subfield'] == 'file_add':
             new_file = DatabaseFile()
@@ -31,7 +36,13 @@ def database_files(request):
             new_file.file = request.FILES['file_upload']
             new_file.uploader = request.user
             new_file.save()
-            gcs_upload_file(request.FILES['file_upload'])
+
+            # Upload the saved file to GCS, then import into the RAG corpus
+            gs_uri = gcs_upload_file(new_file.file.path)
+            try:
+                rag_import_files([gs_uri])
+            except Exception:
+                logger.exception("RAG import failed for %s", gs_uri)
 
     template_data = {}
     template_data['title'] = 'Database'

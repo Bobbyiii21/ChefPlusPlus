@@ -3,6 +3,9 @@ const sendBtn = document.getElementById('sendBtn');
 const messagesWrap = document.getElementById('messagesWrap');
 const emptyState = document.getElementById('emptyState');
 
+// Conversation history sent with each request for multi-turn context
+const chatHistory = [];
+
 // Auto-resize textarea
 input.addEventListener('input', () => {
   input.style.height = 'auto';
@@ -80,7 +83,7 @@ function typeMessage(role, content) {
   return msg;
 }
 
-function sendMessage() {
+async function sendMessage() {
   const text = input.value.trim();
   if (!text) return;
 
@@ -91,11 +94,28 @@ function sendMessage() {
   input.style.height = 'auto';
   sendBtn.disabled = true;
 
-  // Placeholder typing indicator — replace with real API call
+  // Show typing indicator
   const typingMsg = appendMessage('assistant', '', true);
 
-  setTimeout(() => {
+  try {
+    const res = await fetch('/chat/api', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, history: chatHistory }),
+    });
+
+    const data = await res.json();
     typingMsg.remove();
-    typeMessage('assistant', '(AI response will appear here once connected to the RAG model.)');
-  }, 1200);
+
+    if (data.error) {
+      appendMessage('assistant', 'Error: ' + data.error);
+    } else {
+      typeMessage('assistant', data.reply);
+      chatHistory.push({ role: 'user', content: text });
+      chatHistory.push({ role: 'model', content: data.reply });
+    }
+  } catch (err) {
+    typingMsg.remove();
+    appendMessage('assistant', 'Could not reach the server. Please try again.');
+  }
 }
