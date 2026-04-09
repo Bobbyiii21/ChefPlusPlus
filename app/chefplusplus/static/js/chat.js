@@ -2,6 +2,15 @@ const input = document.getElementById('chatInput');
 const sendBtn = document.getElementById('sendBtn');
 const messagesWrap = document.getElementById('messagesWrap');
 const emptyState = document.getElementById('emptyState');
+const conversationHistory = [];
+
+function getCookie(name) {
+  const cookieValue = document.cookie
+    .split(';')
+    .map((cookie) => cookie.trim())
+    .find((cookie) => cookie.startsWith(`${name}=`));
+  return cookieValue ? decodeURIComponent(cookieValue.split('=')[1]) : '';
+}
 
 // Auto-resize textarea
 input.addEventListener('input', () => {
@@ -53,6 +62,7 @@ function appendMessage(role, content, isTyping = false) {
 function sendMessage() {
   const text = input.value.trim();
   if (!text) return;
+  const priorHistory = [...conversationHistory];
 
   appendMessage('user', text);
 
@@ -61,11 +71,57 @@ function sendMessage() {
   input.style.height = 'auto';
   sendBtn.disabled = true;
 
-  // Placeholder typing indicator — replace with real API call
+  // Show typing while waiting on backend.
   const typingMsg = appendMessage('assistant', '', true);
+  const csrfToken = getCookie('csrftoken');
 
-  setTimeout(() => {
-    typingMsg.remove();
-    appendMessage('assistant', '(AI response will appear here once connected to the RAG model.)');
-  }, 1200);
+  fetch('/api/chat', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': csrfToken,
+    },
+    body: JSON.stringify({
+      message: text,
+      history: priorHistory,
+    }),
+  })
+    .then(async (response) => {
+      let payload = {};
+      try {
+        payload = await response.json();
+      } catch (_e) {
+        payload = {};
+      }
+
+      if (!response.ok) {
+        const detail = payload.error || `Request failed (${response.status}).`;
+        throw new Error(detail);
+      }
+
+      if (payload.error) {
+        throw new Error(payload.error);
+      }
+
+      const replyText = (payload.reply || '').trim();
+      if (!replyText) {
+        throw new Error('The assistant returned an empty response.');
+      }
+
+      return replyText;
+    })
+    .then((replyText) => {
+      conversationHistory.push(
+        { role: 'user', content: text },
+        { role: 'assistant', content: replyText },
+      );
+      appendMessage('assistant', replyText);
+    })
+    .catch((error) => {
+      conversationHistory.push({ role: 'user', content: text });
+      appendMessage('assistant', `Sorry — ${error.message}`);
+    })
+    .finally(() => {
+      typingMsg.remove();
+    });
 }

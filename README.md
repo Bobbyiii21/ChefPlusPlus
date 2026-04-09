@@ -33,6 +33,23 @@ Open [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/). For admin log
 
 To listen on all interfaces (e.g. another device on your network): `python manage.py runserver 0.0.0.0:8000` and use your machine’s LAN URL.
 
+## Vertex AI chat integration
+
+This branch wires the home chat UI to `POST /api/chat`, backed by `app/home/vertex_chat.py`.
+
+### Required environment variables
+
+- `GOOGLE_CLOUD_PROJECT`
+- `VERTEX_CHAT_MODEL`
+- `VERTEX_AI_LOCATION` (optional, defaults to `us-central1`)
+- `VERTEX_RAG_CORPUS` (optional; when present, enables Vertex RAG retrieval)
+- `VERTEX_RAG_TOP_K` (optional; defaults to `8`)
+
+### Notes for CI
+
+- Tests in `home/tests.py` mock the AI call path, so CI does **not** need cloud credentials.
+- Runtime uses `google-cloud-aiplatform` (added to `app/requirements.txt`).
+
 ## Docker
 
 From the **repo root:** `docker build -t chefplusplus .` then `docker run --rm -p 8000:8000 chefplusplus` → [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/).
