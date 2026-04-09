@@ -9,3 +9,8 @@ def index(request):
 
 def about(request):
     return render(request, 'home/about.html')
+
+def chat(request):
+    template_data = {}
+    template_data['title'] = 'Chat'
+    return render(request, 'home/chat.html', {'template_data': template_data})

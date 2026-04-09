@@ -23,9 +23,13 @@ class CustomUserCreationForm(UserCreationForm):
         self.fields['password1'].widget.attrs.update({'class': 'form-control'})
         self.fields['password2'].label = 'Password Confirmation'
         self.fields['password2'].widget.attrs.update({'class': 'form-control'})
+        #self.fields['nutrition_goals'].label = 'Nutrition Goals'
+        #self.fields['nutrition_goals'].widget.attrs.update({'class': 'form-control'})
+        #self.fields['nutrition_goals'].help_text = "What do you want ChefPlusPlus"
 
         for field in ['email', 'username', 'password1', 'password2']:
             self.fields[field].help_text = None
+        
 
     class Meta:
         model = CPPUser

@@ -42,7 +42,7 @@ def login(request, just_registered=False):
         user = authenticate(request, username = request.POST['email'],
                           password = request.POST['password1'])
         auth_login(request, user)
-        return
+        return redirect('home.index')
     elif request.method == 'POST':
         user = authenticate(request, username = request.POST['email'],
                           password = request.POST['password'])
@@ -64,7 +64,7 @@ def register(request):
         if form.is_valid():
             form.save()
             login(request, just_registered=True)
-            return redirect('accounts.onboard')
+            return redirect('home.index')
         else:
             template_data['form'] = form
             return render(request, 'accounts/register.html', {'template_data': template_data})

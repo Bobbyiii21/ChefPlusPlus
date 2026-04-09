@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="developer-hero py-5">
+  <div class="container">
+    <div class="row align-items-center gy-4">
+      <div class="col-lg-8">
+        <span class="eyebrow">Accuracy testing</span>
+        <h1>Compare responses against known questions.</h1>
+        <p class="lead">Use this page to evaluate how the assistant performs on verified questions and ensure answers are aligned with expected knowledge.</p>
+        <div class="hero-buttons mt-4">
+          <a class="btn btn-primary btn-lg me-3" href="#accuracy-checks">View test cases</a>
+          <a class="btn btn-outline-dark btn-lg" href="{% url 'developer.index' %}">Back to dashboard</a>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="developer-summary-card p-4 rounded-4 shadow-sm bg-white">
+          <h2 class="mb-3">Validation focus</h2>
+          <ul class="developer-list list-unstyled mb-0">
+            <li>• Confirm answer correctness</li>
+            <li>• Identify model drift</li>
+            <li>• Improve response quality</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="developer-files py-5 bg-light" id="accuracy-checks">
+  <div class="container">
+    <div class="row gy-4">
+      <div class="col-md-4">
+        <div class="feature-card p-4 rounded-4 h-100">
+          <h3>Known questions</h3>
+          <p>Maintain a collection of verified questions to compare actual responses against expected answers.</p>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="feature-card p-4 rounded-4 h-100">
+          <h3>Response scoring</h3>
+          <p>Evaluate each answer for relevance, completeness, and factual accuracy.</p>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="feature-card p-4 rounded-4 h-100">
+          <h3>Iteration</h3>
+          <p>Use the results to refine prompts, adjust ranking, and improve retrieval before redeployment.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock content %}

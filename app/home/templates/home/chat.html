@@ -1,0 +1,99 @@
+{% extends 'base.html' %}
+{% block navbar %}{% endblock navbar %}
+{% block footer %}{% endblock footer %}
+{% block content %}
+{% load static %}
+
+<link rel="stylesheet" href="{% static 'css/chat.css' %}">
+
+<div class="chat-page">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <a class="sidebar-logo" href="{% url 'home.index' %}">Chef++</a>
+      <button class="sidebar-toggle" id="sidebarToggle" aria-label="Collapse sidebar">
+        <span class="material-symbols-outlined">chevron_left</span>
+      </button>
+    </div>
+    <div class="sidebar-footer">
+      <button id="sidebarThemeToggle" class="sidebar-theme-toggle" aria-label="Toggle light/dark mode" onclick="changeTheme()">
+        <span class="material-symbols-outlined" id="sidebarThemeIcon">dark_mode</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Collapsed sidebar tab -->
+  <button class="sidebar-open-btn" id="sidebarOpenBtn" aria-label="Open sidebar">
+    <span class="material-symbols-outlined">chevron_right</span>
+  </button>
+
+  <!-- Main chat area -->
+  <div class="chat-layout">
+
+    <!-- Messages -->
+    <div class="messages-wrap" id="messagesWrap">
+
+      <div class="empty-state" id="emptyState">
+        <div class="big-icon"><span class="material-symbols-outlined">chef_hat</span></div>
+        <h2>Ask me anything.</h2>
+        <p>I have access to your recipe and ingredient knowledge base.</p>
+        <div class="suggestions">
+          <button class="suggestion-chip" onclick="fillSuggestion(this)">What can I make with chicken?</button>
+          <button class="suggestion-chip" onclick="fillSuggestion(this)">Substitute for heavy cream</button>
+          <button class="suggestion-chip" onclick="fillSuggestion(this)">30-minute weeknight meals</button>
+          <button class="suggestion-chip" onclick="fillSuggestion(this)">High-protein breakfast ideas</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Input -->
+    <div class="input-area">
+      <div class="input-row">
+        <textarea
+          class="input-box"
+          id="chatInput"
+          placeholder="Ask about recipes, ingredients, techniques..."
+          rows="1"
+        ></textarea>
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled>
+          <span class="material-symbols-outlined" style="font-size:1.25rem;">arrow_upward</span>
+        </button>
+      </div>
+      <div class="input-hint">Enter to send &nbsp;·&nbsp; Shift+Enter for new line</div>
+    </div>
+
+  </div>
+
+</div>
+
+<script src="{% static 'js/chat.js' %}"></script>
+<script>
+  const sidebar = document.getElementById('sidebar');
+  const toggleBtn = document.getElementById('sidebarToggle');
+  const openBtn = document.getElementById('sidebarOpenBtn');
+
+  toggleBtn.addEventListener('click', () => {
+    sidebar.classList.add('collapsed');
+    openBtn.classList.add('visible');
+  });
+
+  openBtn.addEventListener('click', () => {
+    sidebar.classList.remove('collapsed');
+    openBtn.classList.remove('visible');
+  });
+
+  // Sidebar theme toggle — kept in sync with the navbar toggle in base.html
+  const sidebarThemeBtn = document.getElementById('sidebarThemeToggle');
+  const sidebarThemeIcon = document.getElementById('sidebarThemeIcon');
+
+  function syncSidebarIcon() {
+    const theme = document.documentElement.getAttribute('data-theme');
+    sidebarThemeIcon.textContent = theme === 'dark' ? 'light_mode' : 'dark_mode';
+  }
+
+  syncSidebarIcon();
+</script>
+
+{% endblock content %}

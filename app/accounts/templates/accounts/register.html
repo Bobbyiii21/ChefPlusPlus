@@ -13,7 +13,7 @@
               {% csrf_token %}
               {{ template_data.form.as_p }}
               <div class="d-flex justify-content-between align-items-center">
-                <button type="submit"class="primary-hover-btn">Sign Up</button>
+                <button type="submit" class="btn-site">Sign Up</button>
                 <a class="secondary-hover-btn" href="{% url 'accounts.login' %}">Existing User?</a>
               </div>
             </form>

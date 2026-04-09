@@ -10,17 +10,35 @@
 <div class="p-3 mt-4">
   <div class="container">
     <div class="row justify-content-center">
-        <h3>Files</h3>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h3 class="section-header mb-0">Files</h3>
+          <button type="button" class="btn-site" data-bs-toggle="modal" data-bs-target="#addFileModal">+ New File</button>
+        </div>
         <hr>
         {% for file in template_data.files %}
-        <div class="card">
-            <p>Name: {{ file.name }}</p>
-            <p>Description: {{ file.description }}</p>
-            <p>Upload Info: {{ file.date_added }} by {{ file.uploader }}</p>
-            <p><a href="{{ file.file.url }}" download><h4 class="profile-section-header">Download Link</h4></a></p>
+        <div class="card mb-2">
+          <button class="card-header d-flex justify-content-between align-items-center w-100 border-0 bg-transparent text-start"
+               data-bs-toggle="collapse"
+               data-bs-target="#file-{{ forloop.counter }}"
+               aria-expanded="false"
+               aria-controls="file-{{ forloop.counter }}">
+            <span class="file-name">{{ file.name }}</span>
+            <span class="material-symbols-outlined">expand_more</span>
+          </button>
+          <div class="collapse" id="file-{{ forloop.counter }}">
+            <div class="card-body" id="files">
+              <p><strong>Description:</strong> <br>
+                {{ file.description }}</p>
+              <p><strong>Upload Info:</strong> <br>
+                 {{ file.date_added }} by {{ file.uploader }}</p>
+              <a href="{{ file.file.url }}" download class="btn-site d-inline-flex align-items-center gap-1 mt-1">
+                <span class="material-symbols-outlined" style="font-size:1rem;">download</span>
+                Download
+              </a>
+            </div>
+          </div>
         </div>
         {% endfor %}
-        <button type="button" class="profile-edit-btn" data-bs-toggle="modal" data-bs-target="#addFileModal">Add</button>
     </div>
   </div>
 </div>

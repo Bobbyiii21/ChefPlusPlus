@@ -14,19 +14,67 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
   </head>
 
+  <script src="{% static 'js/base.js' %}"></script>
+
   <body>
+    {% block navbar %}
+    <nav class="navbar navbar-expand-lg" id="mainNav">
+      <div class="container">
+        <a class="navbar-brand" href="{% url 'home.index' %}">
+          Chef++
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar" aria-controls="mainNavbar" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="mainNavbar">
+          <ul class="navbar-nav ms-auto mb-2 mb-lg-0 align-items-lg-center">
+            <li class="nav-item">
+              <a class="nav-link" href="{% url 'home.chat' %}">Chat</a>
+            </li>
+            {% if not request.user.is_authenticated %}
+              <li class="nav-item">
+                <a class="nav-link" href="{% url 'accounts.register' %}">Register</a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="{% url 'accounts.login' %}">Login</a>
+              </li>
+            {% endif %}
+            {% if request.user.is_authenticated and request.user.is_developer or request.user.is_superuser %}
+              <li class="nav-item">
+                <a class="nav-link" href="{% url 'developer.index' %}">Admin Tools</a>
+              </li>
+            {% endif %}
+            {% if request.user.is_authenticated %}
+              <li class="nav-item">
+                <a class="nav-link" href="{% url 'accounts.logout' %}">Log out</a>
+              </li>
+            {% endif %}
+            <li class="nav-item ms-lg-2">
+              <button id="themeToggle" class="btn btn-sm btn-outline-secondary border-0" aria-label="Toggle light/dark mode" onclick="changeTheme()">
+                <span class="material-symbols-outlined" id="themeIcon" style="font-size:1.25rem;vertical-align:middle;">dark_mode</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+    {% endblock navbar %}
+
+    <main>
     {% block content %}
     {% endblock content %}
+    </main>
 
 
+    {% block footer %}
     <!-- Footer -->
     <section class="p-3 ms-footer d-none d-md-block">
       <div class="container">
-        <div class="row mt-3 text-white">
+        <div class="row mt-3 footer-text">
           <div class="col-md-6 col-lg-6 col-xl-6 mx-auto mb-4">
-            <b>ChefPlusPlus</b>
+            <b>Chef++</b>
             <hr />
-            <p>Welcome to ChefPlusPlus, we'll help you achieve all of your nutritional goals and enjoy phood again!</p>
+            <p>Welcome to Chef++, we'll help you achieve all of your nutritional goals and enjoy phood again!</p>
           </div>
           <div class="col-md-3 col-lg-3 col-xl-3 mx-auto mb-4">
             <b>LINKS</b>
@@ -40,23 +88,24 @@
           <div class="col-md-3 col-lg-3 col-xl-3 mx-auto mb-4">
             <b>CONTACT</b>
             <hr />
-            <p><i class="fas fa-home me-2"></i> 123 Bobby Dodd Way, Atlanta, GA</p>
-            <p><i class="fas fa-envelope me-2"></i> info@cpp.com</p>
-            <p><i class="fas fa-phone me-2"></i> +1 404-470-678</p>
+            <p><i class="fas fa-home me-2"></i> 2763 Gordon Ramsay Blvd, Atlantic City, NJ</p>
+            <p><i class="fas fa-envelope me-2"></i> noreply@chefplusplus.com</p>
+            <p><i class="fas fa-phone me-2"></i> 123-456-7890</p>
           </div>
         </div>
       </div>
     </section>
-    <section class="ms-footer-bottom">
+    <section class="ms-footer-bottom pb-3">
       <div class="container d-flex justify-content-between">
-        <div class="me-5 text-white">
+        <div class="me-5 footer-text">
           <span>Designed by Xavier Evans, Luke Ferguson, Ellie Fiftal, Alex Smith, Bobby Stephens III, & Arsh Suri</span>
         </div>
-        <div class="text-white">
+        <div class="footer-text">
           <span>© Nobody - 2026</span>
         </div>
       </div>
     </section>
     <!-- Footer -->
+    {% endblock footer %}
   </body>
 </html>

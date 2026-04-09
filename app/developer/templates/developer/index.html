@@ -2,15 +2,30 @@
 {% block content %}
 {% load static %}
 
-<!--<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cal+Sans&display=swap" rel="stylesheet">-->
+<div class="p-3 mt-4">
+  <div class="container">
 
-  <header class="masthead homepage-banner py-4">
-    <div class="container flex-column">
-      <p class="banner-text"><em>Phood</em></p>
-      <p><a href="{% url 'home.index' %}">Home</a></p>
-      <p><a href="{% url 'developer.files' %}">Update Database</a></p>
+    <div class="mb-4">
+      <h3 class="section-header mb-0">Admin Tools</h3>
     </div>
-  </header>
+    <hr>
+
+    <div class="row g-3 mt-2">
+
+      <div class="col-md-4">
+        <a href="{% url 'developer.files' %}" class="text-decoration-none">
+          <div class="card p-3 h-100 developer-card">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <span class="material-symbols-outlined developer-card-icon">database</span>
+              <span class="developer-card-title">Update Database</span>
+            </div>
+            <p class="developer-card-desc mb-0">Upload and manage files in the database.</p>
+          </div>
+        </a>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 {% endblock content %}

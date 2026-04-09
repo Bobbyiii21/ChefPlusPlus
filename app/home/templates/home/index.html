@@ -1,17 +1,9 @@
 {% extends 'base.html' %}
 {% block content %}
-{% load static %}
 
-<!--<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cal+Sans&display=swap" rel="stylesheet">-->
+<div class="container mt-5 text-center">
+  <h1>Welcome to Chef++</h1>
+  <p>Your AI-powered recipe and nutrition assistant.</p>
+</div>
 
-  <header class="masthead homepage-banner py-4">
-    <div class="container flex-column">
-      <p class="banner-text"><em>Phood</em></p>
-      <p><a href="{% url 'accounts.register' %}">Register</a></p>
-      <p><a href="{% url 'accounts.login' %}">Login</a></p>
-      <p><a href="{% url 'developer.index' %}">Developer Database Access</a></p>
-    </div>
-  </header>
 {% endblock content %}
