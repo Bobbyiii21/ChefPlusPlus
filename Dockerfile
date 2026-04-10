@@ -28,4 +28,4 @@ EXPOSE 8000
 
 # Higher timeout / keep-alive than defaults: behind ALB or slow clients, sync workers
 # can otherwise hit WORKER TIMEOUT while waiting to read a full request ("no URI read").
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2", "--timeout", "120", "--graceful-timeout", "30", "--keep-alive", "75", "chefplusplus.wsgi:application"]
+CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py ensure_superuser && gunicorn --bind 0.0.0.0:8000 --workers 2 --timeout 120 --graceful-timeout 30 --keep-alive 75 chefplusplus.wsgi:application"]
