@@ -1,0 +1,140 @@
+name: Deploy — Bulk Push to Unix Hosts
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment (staging | production)"
+        required: true
+        default: "staging"
+        type: choice
+        options: [staging, production]
+      dry_run:
+        description: "Dry-run (render config only, do not push)"
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  # ── Validate before deploy ─────────────────────────────────────────────────
+  pre-deploy-checks:
+    name: Pre-deploy validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run full test suite
+        run: pytest tests/ -v --tb=short
+
+      - name: Audit simulation must complete
+        run: python -m cli.main audit --simulate --no-detail --output audit_pre_deploy.json
+        continue-on-error: true
+
+      - name: Upload pre-deploy audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: pre-deploy-audit-${{ inputs.environment }}
+          path: audit_pre_deploy.json
+
+  # ── Staging deploy ─────────────────────────────────────────────────────────
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: pre-deploy-checks
+    if: inputs.environment == 'staging' || inputs.environment == 'production'
+    environment: staging
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.STAGING_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Commission staging device
+        run: |
+          DRY_FLAG=""
+          if [[ "${{ inputs.dry_run }}" == "true" ]]; then DRY_FLAG="-d"; fi
+          bash scripts/bash/commission_device.sh \
+            -h "${{ secrets.STAGING_HOST }}" \
+            -u "${{ secrets.STAGING_USER }}" \
+            -t linux \
+            -k ~/.ssh/deploy_key \
+            $DRY_FLAG
+
+      - name: Health check post-deploy
+        if: inputs.dry_run == false
+        run: |
+          echo "${{ secrets.STAGING_HOST }},sysadmin,22,linux" > /tmp/staging.csv
+          bash scripts/bash/health_check.sh -i /tmp/staging.csv
+
+  # ── Production deploy ──────────────────────────────────────────────────────
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: inputs.environment == 'production'
+    environment: production        # Requires manual approval in GitHub
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+      - name: Bulk deploy to production fleet
+        run: |
+          DRY_FLAG=""
+          [[ "${{ inputs.dry_run }}" == "true" ]] && DRY_FLAG="-d"
+          bash scripts/bash/bulk_deploy.sh \
+            -i "${{ secrets.PROD_INVENTORY_CSV_PATH }}" \
+            -w 10 \
+            $DRY_FLAG
+
+      - name: Post-deploy compliance audit
+        run: |
+          python -m cli.main audit --simulate --no-detail --output post_deploy_audit.json
+        continue-on-error: true
+
+      - name: Upload post-deploy audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-deploy-audit
+          path: post_deploy_audit.json

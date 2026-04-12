@@ -1,0 +1,12 @@
+paramiko>=3.4.0
+PyYAML>=6.0.2
+Jinja2>=3.1.4
+click>=8.1.7
+rich>=13.7.0
+pytest>=8.3.0
+pytest-cov>=5.0.0
+pytest-mock>=3.14.0
+black>=24.8.0
+flake8>=7.1.0
+mypy>=1.11.0
+types-PyYAML>=6.0.12

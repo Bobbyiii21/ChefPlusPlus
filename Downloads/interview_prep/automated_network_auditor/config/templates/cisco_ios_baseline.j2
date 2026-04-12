@@ -1,0 +1,91 @@
+! ============================================================
+! Cisco IOS Baseline Configuration
+! Device: {{ device.name }}  |  Host: {{ device.host }}
+! Role: {{ device.role }}    |  Location: {{ device.location }}
+! Generated: {{ timestamp }}
+! ============================================================
+
+hostname {{ device.name }}
+
+! ── AAA / Authentication ─────────────────────────────────
+aaa new-model
+aaa authentication login default local
+aaa authorization exec default local if-authenticated
+aaa accounting exec default start-stop local
+
+username admin privilege 15 secret {{ admin_secret | default('CHANGE_ME_NOW') }}
+
+service password-encryption
+
+! ── SSH v2 Only ──────────────────────────────────────────
+ip domain-name {{ domain | default('corp.local') }}
+crypto key generate rsa modulus 2048
+ip ssh version 2
+ip ssh time-out 60
+ip ssh authentication-retries 3
+
+line vty 0 15
+ login local
+ transport input ssh
+ exec-timeout 10 0
+
+line con 0
+ login local
+ exec-timeout 5 0
+
+! ── NTP ──────────────────────────────────────────────────
+{% for ntp_server in ntp_servers | default(['10.0.0.100', '10.0.0.101']) %}
+ntp server {{ ntp_server }}
+{% endfor %}
+ntp update-calendar
+
+! ── Logging ──────────────────────────────────────────────
+logging buffered 16384 informational
+logging trap informational
+{% if syslog_server is defined %}
+logging host {{ syslog_server }}
+{% endif %}
+service timestamps log datetime msec localtime show-timezone
+
+! ── Login Banner ─────────────────────────────────────────
+banner motd ^
+***************************************************************************
+*  AUTHORIZED ACCESS ONLY                                                  *
+*  This system is the property of {{ org_name | default('CORP') }}.       *
+*  Unauthorized access is prohibited and will be prosecuted.               *
+*  All activity is monitored and logged.                                   *
+*  Disconnect IMMEDIATELY if you are not an authorized user.               *
+***************************************************************************
+^
+
+! ── SNMP v3 ──────────────────────────────────────────────
+no snmp-server community public RO
+no snmp-server community private RW
+snmp-server group NETOPS v3 priv
+snmp-server user admin NETOPS v3 auth sha {{ snmp_auth_pass | default('CHANGE_AUTH') }} priv aes 128 {{ snmp_priv_pass | default('CHANGE_PRIV') }}
+
+! ── Disable Unused Services ──────────────────────────────
+no service tcp-small-servers
+no service udp-small-servers
+no ip http server
+no ip http secure-server
+no cdp run
+no ip source-route
+no ip bootp server
+
+! ── Interface Defaults ───────────────────────────────────
+{% for intf in interfaces | default([]) %}
+interface {{ intf.name }}
+ description {{ intf.description | default('-- managed by automation --') }}
+{% if intf.ip is defined %}
+ ip address {{ intf.ip }} {{ intf.mask }}
+{% endif %}
+{% if not intf.enabled | default(true) %}
+ shutdown
+{% else %}
+ no shutdown
+{% endif %}
+!
+{% endfor %}
+
+end

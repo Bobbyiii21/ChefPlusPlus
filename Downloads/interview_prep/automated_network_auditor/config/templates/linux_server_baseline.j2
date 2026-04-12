@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# ============================================================
+# Linux Server Baseline Configuration Script
+# Device: {{ device.name }}  |  Host: {{ device.host }}
+# Role: {{ device.role }}    |  Location: {{ device.location }}
+# Generated: {{ timestamp }}
+# ============================================================
+set -euo pipefail
+
+echo "[baseline] Applying baseline to {{ device.name }} ({{ device.host }})"
+
+# ── SSH Hardening ─────────────────────────────────────────
+SSHD_CONF=/etc/ssh/sshd_config
+
+configure_sshd() {
+    local key="$1" val="$2"
+    if grep -qE "^${key}" "$SSHD_CONF"; then
+        sed -i "s|^${key}.*|${key} ${val}|" "$SSHD_CONF"
+    else
+        echo "${key} ${val}" >> "$SSHD_CONF"
+    fi
+}
+
+configure_sshd "PermitRootLogin"          "no"
+configure_sshd "PasswordAuthentication"   "no"
+configure_sshd "Protocol"                 "2"
+configure_sshd "MaxAuthTries"             "3"
+configure_sshd "ClientAliveInterval"      "300"
+configure_sshd "ClientAliveCountMax"      "2"
+configure_sshd "LoginGraceTime"           "60"
+configure_sshd "Banner"                   "/etc/issue.net"
+configure_sshd "X11Forwarding"            "no"
+configure_sshd "AllowTcpForwarding"       "no"
+
+# ── Login Banner ─────────────────────────────────────────
+cat > /etc/issue.net << 'BANNER'
+***************************************************************************
+*  AUTHORIZED ACCESS ONLY — {{ org_name | default('CORP') }} PROPERTY     *
+*  Unauthorized access is strictly prohibited and will be prosecuted.      *
+*  All sessions are monitored and logged.                                  *
+*  Disconnect IMMEDIATELY if you are not an authorized user.               *
+***************************************************************************
+BANNER
+
+cat > /etc/motd << 'MOTD'
+Welcome to {{ device.name }} ({{ device.role }}).
+Managed by: Network Operations — {{ org_name | default('CORP') }}
+MOTD
+
+# ── NTP / Chrony ─────────────────────────────────────────
+apt-get install -y -qq chrony 2>/dev/null || yum install -y -q chrony 2>/dev/null || true
+
+cat > /etc/chrony.conf << 'CHRONY'
+{% for ntp_server in ntp_servers | default(['pool.ntp.org']) %}
+server {{ ntp_server }} iburst
+{% endfor %}
+driftfile /var/lib/chrony/drift
+makestep 1.0 3
+rtcsync
+CHRONY
+
+systemctl enable --now chronyd
+
+# ── Firewall (ufw) ────────────────────────────────────────
+ufw --force reset
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow {{ device.ssh_port | default(22) }}/tcp comment "SSH"
+{% for rule in firewall_rules | default([]) %}
+ufw allow {{ rule }}
+{% endfor %}
+ufw --force enable
+
+# ── Syslog ────────────────────────────────────────────────
+{% if syslog_server is defined %}
+cat > /etc/rsyslog.d/99-remote.conf << EOF
+*.* @{{ syslog_server }}:514
+EOF
+systemctl restart rsyslog
+{% endif %}
+
+# ── Restart SSH ───────────────────────────────────────────
+systemctl restart sshd
+
+echo "[baseline] {{ device.name }} baseline complete."

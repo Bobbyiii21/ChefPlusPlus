@@ -1,0 +1,58 @@
+---
+# Network Device Inventory
+# All fields except password/key_file are required
+
+defaults:
+  port: 22
+  timeout: 30
+  simulate: true          # set false in production with real devices
+  retry_attempts: 3
+  retry_delay: 2.0
+
+devices:
+  - name: R1
+    host: 10.0.0.1
+    device_type: cisco_ios
+    username: admin
+    port: 22
+    location: DC-Core
+    role: core-router
+    tags: [core, critical]
+
+  - name: SW1
+    host: 10.0.0.2
+    device_type: cisco_ios
+    username: admin
+    port: 22
+    location: DC-Distribution
+    role: distribution-switch
+    tags: [distribution]
+    # SW1 is intentionally missing NTP — will fail audit
+
+  - name: FW1
+    host: 10.0.0.3
+    device_type: cisco_asa
+    username: admin
+    port: 22
+    location: DC-Edge
+    role: perimeter-firewall
+    tags: [security, critical]
+
+  - name: SRV1
+    host: 10.0.1.10
+    device_type: linux
+    username: sysadmin
+    port: 22
+    location: DC-Rack-A
+    role: application-server
+    tags: [server]
+
+  - name: SRV2
+    host: 10.0.1.11
+    device_type: linux
+    username: sysadmin
+    port: 22
+    location: DC-Rack-A
+    role: application-server
+    tags: [server]
+    # SRV2 has no banner — will fail audit

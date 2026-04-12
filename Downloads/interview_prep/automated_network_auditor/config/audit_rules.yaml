@@ -1,0 +1,195 @@
+---
+# Audit Rules Configuration
+# Each rule defines a compliance check applied to a device category.
+# severity: critical | high | medium | low
+# device_types: which device_type values this rule applies to (empty = all)
+
+rules:
+
+  # ── SSH / Transport Security ────────────────────────────────────────────────
+  - id: SSH_VERSION
+    name: SSH v2 Enforced
+    description: Device must use SSH protocol version 2 only.
+    severity: critical
+    device_types: [cisco_ios, cisco_asa]
+    check_type: regex
+    pattern: "ip ssh version 2"
+    command: "show running-config | include ip ssh version"
+    remediation: "Run: ip ssh version 2"
+
+  - id: TELNET_DISABLED
+    name: Telnet Disabled
+    description: Telnet (port 23) must not be enabled on VTY lines.
+    severity: critical
+    device_types: [cisco_ios, cisco_asa]
+    check_type: absent_regex
+    pattern: "transport input telnet"
+    command: "show running-config | include transport input"
+    remediation: "Run: line vty 0 4 → transport input ssh"
+
+  # ── Authentication / AAA ────────────────────────────────────────────────────
+  - id: AAA_AUTH
+    name: AAA Authentication Configured
+    description: AAA new-model must be enabled.
+    severity: critical
+    device_types: [cisco_ios, cisco_asa]
+    check_type: regex
+    pattern: "aaa new-model"
+    command: "show running-config | include aaa new-model"
+    remediation: "Run: aaa new-model"
+
+  - id: AAA_LOCAL_FALLBACK
+    name: AAA Local Fallback Present
+    description: Local authentication fallback must exist in case RADIUS/TACACS is unreachable.
+    severity: high
+    device_types: [cisco_ios, cisco_asa]
+    check_type: regex
+    pattern: "aaa authentication login .* local"
+    command: "show running-config | include aaa authentication"
+    remediation: "Add local fallback to aaa authentication login statement"
+
+  - id: ENABLE_SECRET
+    name: Enable Secret Set
+    description: Enable secret (MD5 or PBKDF2) must be configured, not enable password.
+    severity: critical
+    device_types: [cisco_ios]
+    check_type: regex
+    pattern: "enable secret"
+    command: "show running-config | include enable secret"
+    remediation: "Run: enable secret <strong-password>"
+
+  - id: NO_ENABLE_PLAIN
+    name: No Plaintext Enable Password
+    description: Plaintext enable password must not be used.
+    severity: high
+    device_types: [cisco_ios]
+    check_type: absent_regex
+    pattern: "^enable password "
+    command: "show running-config | include enable password"
+    remediation: "Remove enable password, use enable secret instead"
+
+  # ── NTP / Time Sync ─────────────────────────────────────────────────────────
+  - id: NTP_CONFIGURED
+    name: NTP Server Configured
+    description: At least one NTP server must be configured for time synchronisation.
+    severity: high
+    device_types: [cisco_ios, cisco_asa]
+    check_type: regex
+    pattern: "ntp server"
+    command: "show running-config | include ntp server"
+    remediation: "Run: ntp server <ntp-server-ip>"
+
+  - id: NTP_LINUX
+    name: NTP/Chrony Configured (Linux)
+    description: chrony or ntp daemon must be active.
+    severity: high
+    device_types: [linux]
+    check_type: regex
+    pattern: "(chronyc|ntpd|timesyncd)"
+    command: "timedatectl status"
+    remediation: "Install and enable chrony: systemctl enable --now chronyd"
+
+  # ── Login Banner ─────────────────────────────────────────────────────────────
+  - id: LOGIN_BANNER
+    name: Login Banner Configured
+    description: A legal login banner (MOTD or login) must be displayed.
+    severity: medium
+    device_types: [cisco_ios, cisco_asa]
+    check_type: regex
+    pattern: "banner (motd|login)"
+    command: "show running-config | include banner"
+    remediation: "Run: banner motd # <legal notice text> #"
+
+  - id: LINUX_BANNER
+    name: SSH Banner Configured (Linux)
+    description: /etc/issue.net or /etc/motd must contain a legal notice.
+    severity: medium
+    device_types: [linux]
+    check_type: regex
+    pattern: "Authorized"
+    command: "cat /etc/issue.net"
+    remediation: "Add legal notice to /etc/issue.net and set Banner /etc/issue.net in /etc/ssh/sshd_config"
+
+  # ── Password / Account Policies ──────────────────────────────────────────────
+  - id: SERVICE_PASSWORD_ENCRYPT
+    name: Service Password Encryption
+    description: service password-encryption must be enabled.
+    severity: high
+    device_types: [cisco_ios]
+    check_type: regex
+    pattern: "service password-encryption"
+    command: "show running-config | include service password"
+    remediation: "Run: service password-encryption"
+
+  - id: LOGIN_LOCAL
+    name: Local User Database Defined
+    description: At least one local username must be configured.
+    severity: high
+    device_types: [cisco_ios, cisco_asa]
+    check_type: regex
+    pattern: "^username "
+    command: "show running-config | include username"
+    remediation: "Create a local admin user: username admin privilege 15 secret <pass>"
+
+  # ── Logging / Audit Trail ───────────────────────────────────────────────────
+  - id: LOGGING_ENABLED
+    name: Syslog Logging Enabled
+    description: Logging to a remote syslog server must be active.
+    severity: medium
+    device_types: [cisco_ios, cisco_asa]
+    check_type: regex
+    pattern: "logging host"
+    command: "show running-config | include logging host"
+    remediation: "Run: logging host <syslog-server-ip>"
+
+  - id: LOGGING_BUFFERED
+    name: Buffered Logging Enabled
+    description: Local buffered logging must be configured.
+    severity: low
+    device_types: [cisco_ios]
+    check_type: regex
+    pattern: "logging buffered"
+    command: "show running-config | include logging buffered"
+    remediation: "Run: logging buffered 16384 informational"
+
+  # ── SNMP ──────────────────────────────────────────────────────────────────────
+  - id: NO_SNMP_V1V2
+    name: SNMPv1/v2 Disabled
+    description: SNMPv1 and v2c community strings must not be configured.
+    severity: high
+    device_types: [cisco_ios, cisco_asa]
+    check_type: absent_regex
+    pattern: "snmp-server community"
+    command: "show running-config | include snmp-server community"
+    remediation: "Remove all snmp-server community lines and migrate to SNMPv3"
+
+  # ── Linux-specific ───────────────────────────────────────────────────────────
+  - id: SSH_ROOT_DISABLED
+    name: SSH Root Login Disabled (Linux)
+    description: PermitRootLogin must be no in sshd_config.
+    severity: critical
+    device_types: [linux]
+    check_type: regex
+    pattern: "PermitRootLogin no"
+    command: "grep PermitRootLogin /etc/ssh/sshd_config"
+    remediation: "Set PermitRootLogin no in /etc/ssh/sshd_config and restart sshd"
+
+  - id: PASSWORD_AUTH_DISABLED
+    name: SSH Password Auth Disabled (Linux)
+    description: PasswordAuthentication must be no — key-based auth only.
+    severity: high
+    device_types: [linux]
+    check_type: regex
+    pattern: "PasswordAuthentication no"
+    command: "grep PasswordAuthentication /etc/ssh/sshd_config"
+    remediation: "Set PasswordAuthentication no in sshd_config and deploy SSH keys"
+
+  - id: FIREWALL_ACTIVE
+    name: Firewall Active (Linux)
+    description: ufw or iptables must be active.
+    severity: high
+    device_types: [linux]
+    check_type: regex
+    pattern: "(Status: active|Chain INPUT)"
+    command: "ufw status"
+    remediation: "Enable firewall: ufw enable"
