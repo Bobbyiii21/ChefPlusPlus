@@ -231,3 +231,96 @@ a:hover {
 .text-accent {
   color: var(--accent);
 }
+
+/* --- Delete button --- */
+.btn-delete {
+  background: #c0392b;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 0.45rem 1rem;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btn-delete:hover {
+  opacity: 0.85;
+  color: #fff;
+}
+
+/* --- Modal theming --- */
+.modal-content {
+  background-color: var(--background);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.modal-header {
+  border-bottom-color: var(--border);
+}
+
+.modal-footer {
+  border-top-color: var(--border);
+}
+
+/* --- Source tabs --- */
+.source-tabs .nav-link {
+  color: var(--text-muted);
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+}
+
+.source-tabs .nav-link:hover {
+  color: var(--text);
+  border-bottom-color: var(--border);
+}
+
+.source-tabs .nav-link.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+  background: none;
+}
+
+/* --- Primary / Secondary hover buttons --- */
+.primary-hover-btn {
+  background: var(--primary);
+  color: var(--background);
+  border: none;
+  border-radius: 12px;
+  padding: 0.45rem 1.25rem;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.primary-hover-btn:hover {
+  opacity: 0.85;
+}
+
+.secondary-hover-btn {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.45rem 1.25rem;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.secondary-hover-btn:hover {
+  opacity: 0.85;
+}
+
+/* --- Alert theming --- */
+.alert {
+  border-radius: 12px;
+  font-size: 0.9rem;
+}

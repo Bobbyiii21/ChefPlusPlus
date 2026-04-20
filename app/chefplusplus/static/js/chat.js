@@ -3,6 +3,13 @@ const sendBtn = document.getElementById('sendBtn');
 const messagesWrap = document.getElementById('messagesWrap');
 const emptyState = document.getElementById('emptyState');
 
+const conversationHistory = [];
+
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+});
+
 // Auto-resize textarea
 input.addEventListener('input', () => {
   input.style.height = 'auto';
@@ -39,6 +46,9 @@ function appendMessage(role, content, isTyping = false) {
 
   if (isTyping) {
     bubble.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+  } else if (role === 'assistant') {
+    bubble.classList.add('markdown-body');
+    bubble.innerHTML = marked.parse(content);
   } else {
     bubble.textContent = content;
   }
@@ -50,52 +60,40 @@ function appendMessage(role, content, isTyping = false) {
   return msg;
 }
 
-function typeMessage(role, content) {
-  if (emptyState) emptyState.style.display = 'none';
-
-  const msg = document.createElement('div');
-  msg.className = `message ${role}`;
-
-  const label = document.createElement('div');
-  label.className = 'message-label';
-  label.textContent = 'chef++';
-
-  const bubble = document.createElement('div');
-  bubble.className = 'message-bubble';
-
-  msg.appendChild(label);
-  msg.appendChild(bubble);
-  messagesWrap.appendChild(msg);
-
-  let i = 0;
-  const speed = 10; // ms per character
-  function tick() {
-    if (i < content.length) {
-      bubble.textContent += content[i++];
-      messagesWrap.scrollTop = messagesWrap.scrollHeight;
-      setTimeout(tick, speed);
-    }
-  }
-  tick();
-  return msg;
-}
-
-function sendMessage() {
+async function sendMessage() {
   const text = input.value.trim();
   if (!text) return;
 
   appendMessage('user', text);
 
-  // Reset input
   input.value = '';
   input.style.height = 'auto';
   sendBtn.disabled = true;
 
-  // Placeholder typing indicator — replace with real API call
   const typingMsg = appendMessage('assistant', '', true);
 
-  setTimeout(() => {
+  try {
+    const res = await fetch('/chat/api/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: text,
+        history: conversationHistory.length ? conversationHistory : null,
+      }),
+    });
+
+    const data = await res.json();
     typingMsg.remove();
-    typeMessage('assistant', '(AI response will appear here once connected to the RAG model.)');
-  }, 1200);
+
+    if (data.error) {
+      appendMessage('assistant', 'Sorry, something went wrong: ' + data.error);
+    } else {
+      appendMessage('assistant', data.reply);
+      conversationHistory.push({ role: 'user', content: text });
+      conversationHistory.push({ role: 'model', content: data.reply });
+    }
+  } catch (err) {
+    typingMsg.remove();
+    appendMessage('assistant', 'Network error — please try again.');
+  }
 }

@@ -3,11 +3,11 @@
 {% block footer %}{% endblock footer %}
 {% block content %}
 {% load static %}
-
+ 
 <link rel="stylesheet" href="{% static 'css/chat.css' %}">
-
+ 
 <div class="chat-page">
-
+ 
   <!-- Sidebar -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
@@ -22,18 +22,29 @@
       </button>
     </div>
   </aside>
-
+ 
   <!-- Collapsed sidebar tab -->
   <button class="sidebar-open-btn" id="sidebarOpenBtn" aria-label="Open sidebar">
     <span class="material-symbols-outlined">chevron_right</span>
   </button>
-
+ 
+  <!-- Top-right nav -->
+  <nav class="chat-topnav">
+    <a href="/" class="chat-topnav-link">Home</a>
+    {% if user.is_authenticated %}
+      <a href="{% url 'accounts.logout' %}" class="chat-topnav-link">Log out</a>
+    {% else %}
+      <a href="{% url 'accounts.login' %}" class="chat-topnav-link">Log in</a>
+      <a href="{% url 'accounts.register' %}" class="chat-topnav-link chat-topnav-link--cta">Register</a>
+    {% endif %}
+  </nav>
+ 
   <!-- Main chat area -->
   <div class="chat-layout">
-
+ 
     <!-- Messages -->
     <div class="messages-wrap" id="messagesWrap">
-
+ 
       <div class="empty-state" id="emptyState">
         <div class="big-icon"><span class="material-symbols-outlined">chef_hat</span></div>
         <h2>Ask me anything.</h2>
@@ -45,9 +56,9 @@
           <button class="suggestion-chip" onclick="fillSuggestion(this)">High-protein breakfast ideas</button>
         </div>
       </div>
-
+ 
     </div>
-
+ 
     <!-- Input -->
     <div class="input-area">
       <div class="input-row">
@@ -63,37 +74,38 @@
       </div>
       <div class="input-hint">Enter to send &nbsp;·&nbsp; Shift+Enter for new line</div>
     </div>
-
+ 
   </div>
-
+ 
 </div>
-
+ 
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="{% static 'js/chat.js' %}"></script>
 <script>
   const sidebar = document.getElementById('sidebar');
   const toggleBtn = document.getElementById('sidebarToggle');
   const openBtn = document.getElementById('sidebarOpenBtn');
-
+ 
   toggleBtn.addEventListener('click', () => {
     sidebar.classList.add('collapsed');
     openBtn.classList.add('visible');
   });
-
+ 
   openBtn.addEventListener('click', () => {
     sidebar.classList.remove('collapsed');
     openBtn.classList.remove('visible');
   });
-
+ 
   // Sidebar theme toggle — kept in sync with the navbar toggle in base.html
   const sidebarThemeBtn = document.getElementById('sidebarThemeToggle');
   const sidebarThemeIcon = document.getElementById('sidebarThemeIcon');
-
+ 
   function syncSidebarIcon() {
     const theme = document.documentElement.getAttribute('data-theme');
     sidebarThemeIcon.textContent = theme === 'dark' ? 'light_mode' : 'dark_mode';
   }
-
+ 
   syncSidebarIcon();
 </script>
-
+ 
 {% endblock content %}

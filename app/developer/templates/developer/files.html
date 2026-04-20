@@ -2,82 +2,201 @@
 {% block content %}
 {% load static %}
 
-<!--<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cal+Sans&display=swap" rel="stylesheet">-->
-
-
 <div class="p-3 mt-4">
   <div class="container">
     <div class="row justify-content-center">
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <h3 class="section-header mb-0">Files</h3>
-          <button type="button" class="btn-site" data-bs-toggle="modal" data-bs-target="#addFileModal">+ New File</button>
-        </div>
-        <hr>
-        {% for file in template_data.files %}
-        <div class="card mb-2">
-          <button class="card-header d-flex justify-content-between align-items-center w-100 border-0 bg-transparent text-start"
-               data-bs-toggle="collapse"
-               data-bs-target="#file-{{ forloop.counter }}"
-               aria-expanded="false"
-               aria-controls="file-{{ forloop.counter }}">
-            <span class="file-name">{{ file.name }}</span>
-            <span class="material-symbols-outlined">expand_more</span>
-          </button>
-          <div class="collapse" id="file-{{ forloop.counter }}">
-            <div class="card-body" id="files">
-              <p><strong>Description:</strong> <br>
-                {{ file.description }}</p>
-              <p><strong>Upload Info:</strong> <br>
-                 {{ file.date_added }} by {{ file.uploader }}</p>
-              <a href="{{ file.file.url }}" download class="btn-site d-inline-flex align-items-center gap-1 mt-1">
-                <span class="material-symbols-outlined" style="font-size:1rem;">download</span>
-                Download
-              </a>
-            </div>
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h3 class="section-header mb-0">Files</h3>
+        <button type="button" class="btn-site" data-bs-toggle="modal" data-bs-target="#addSourceModal">+ New Source</button>
+      </div>
+      <hr>
+
+      {% if template_data.error %}
+      <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        {{ template_data.error }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+      {% endif %}
+
+      {% if template_data.success %}
+      <div class="alert alert-success alert-dismissible fade show" role="alert">
+        {{ template_data.success }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+      {% endif %}
+
+      {% for file in template_data.files %}
+      <div class="card mb-2">
+        <button class="card-header d-flex justify-content-between align-items-center w-100 border-0 bg-transparent text-start"
+             data-bs-toggle="collapse"
+             data-bs-target="#file-{{ forloop.counter }}"
+             aria-expanded="false"
+             aria-controls="file-{{ forloop.counter }}">
+          <span class="file-name">
+            <span class="material-symbols-outlined me-1" style="font-size:1rem;vertical-align:middle;">
+              {% if file.source_type == 'text' %}description{% else %}upload_file{% endif %}
+            </span>
+            {{ file.name }}
+          </span>
+          <span class="material-symbols-outlined">expand_more</span>
+        </button>
+        <div class="collapse" id="file-{{ forloop.counter }}">
+          <div class="card-body" id="files">
+            <p><strong>Description:</strong> <br>
+              {{ file.description|default:"—" }}</p>
+            <p><strong>Type:</strong> {{ file.get_source_type_display }}</p>
+            <p><strong>Upload Info:</strong> <br>
+               {{ file.date_added }} by {{ file.uploader }}</p>
+            {% if file.file %}
+            <a href="{{ file.file.url }}" download class="btn-site d-inline-flex align-items-center gap-1 mt-1">
+              <span class="material-symbols-outlined" style="font-size:1rem;">download</span>
+              Download
+            </a>
+            {% endif %}
+            <form method="POST" action="{% url 'developer.files.delete' file.pk %}" class="d-inline-block ms-2 mt-1"
+                  onsubmit="return confirm('Delete \x22{{ file.name|escapejs }}\x22? This will also remove it from the RAG model.');">
+              {% csrf_token %}
+              <button type="submit" class="btn-delete d-inline-flex align-items-center gap-1">
+                <span class="material-symbols-outlined" style="font-size:1rem;">delete</span>
+                Delete
+              </button>
+            </form>
           </div>
         </div>
-        {% endfor %}
+      </div>
+      {% empty %}
+      <p class="text-muted mt-3">No files yet. Click "+ New Source" to add one.</p>
+      {% endfor %}
     </div>
   </div>
 </div>
 
 
-
-<div class="modal fade" id="addFileModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="addFileModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
+<!-- Add Source Modal -->
+<div class="modal fade" id="addSourceModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="addSourceModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
     <div class="modal-content">
-      <form method="POST" enctype="multipart/form-data">
-        {% csrf_token %}
-        <div class="mb-3" style="display:none;">
-          <textarea class="form-control" name="subfield">file_add</textarea>
-          <input type="hidden" name="id" id="edit-experience-id" value="">
-        </div>
-        <div class="modal-header">
-          <h1 class="modal-title fs-5" id="editExperienceModalLabel"><strong>Add File</strong></h1>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body">
-          <div class="mb-3">
-            <label for="edit-name" class="form-label">Name*</label>
-            <textarea class="form-control" id="edit-name" name="name" rows="2" maxlength="255" required></textarea>
+      <div class="modal-header">
+        <h1 class="modal-title fs-5" id="addSourceModalLabel"><strong>Add Source</strong></h1>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <!-- Upload type tabs -->
+        <ul class="nav nav-tabs source-tabs mb-3" id="sourceTab" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="file-tab" data-bs-toggle="tab" data-bs-target="#fileUploadPane" type="button" role="tab" aria-controls="fileUploadPane" aria-selected="true">
+              <span class="material-symbols-outlined me-1" style="font-size:1rem;vertical-align:middle;">upload_file</span>
+              File Upload
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="text-tab" data-bs-toggle="tab" data-bs-target="#textUploadPane" type="button" role="tab" aria-controls="textUploadPane" aria-selected="false">
+              <span class="material-symbols-outlined me-1" style="font-size:1rem;vertical-align:middle;">description</span>
+              Text Upload
+            </button>
+          </li>
+        </ul>
+
+        <div class="tab-content" id="sourceTabContent">
+          <!-- File Upload Tab -->
+          <div class="tab-pane fade show active" id="fileUploadPane" role="tabpanel" aria-labelledby="file-tab">
+            <form method="POST" enctype="multipart/form-data" id="fileUploadForm">
+              {% csrf_token %}
+              <input type="hidden" name="subfield" value="file_add">
+              <div class="mb-3">
+                <label for="file-name" class="form-label">Name*</label>
+                <input type="text" class="form-control" id="file-name" name="name" maxlength="255" required>
+              </div>
+              <div class="mb-3">
+                <label for="file-description" class="form-label">Description</label>
+                <textarea class="form-control" id="file-description" name="description" rows="3" maxlength="1023"></textarea>
+              </div>
+              <div class="mb-3">
+                <label for="file-upload-input" class="form-label">File (PDF or TXT)*</label>
+                <input type="file" class="form-control" id="file-upload-input" name="file_upload" accept=".pdf,.txt" required>
+                <div class="form-text text-muted">Accepted formats: .pdf, .txt</div>
+              </div>
+              <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="secondary-hover-btn" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="primary-hover-btn">Upload File</button>
+              </div>
+            </form>
           </div>
-          <div class="mb-3">
-            <label for="edit-description" class="form-label">Description</label>
-            <textarea class="form-control" id="edit-description" name="description" rows="5" maxlength="1023"></textarea>
-          </div>
-          <div class="mb-3">
-            <input type="file" name="file_upload" required/>
-            <label for="file_upload" class="btn">Upload File</label>
+
+          <!-- Text Upload Tab -->
+          <div class="tab-pane fade" id="textUploadPane" role="tabpanel" aria-labelledby="text-tab">
+            <form method="POST" id="textUploadForm">
+              {% csrf_token %}
+              <input type="hidden" name="subfield" value="text_add">
+              <div class="mb-3">
+                <label for="text-name" class="form-label">Name*</label>
+                <input type="text" class="form-control" id="text-name" name="name" maxlength="255" required>
+              </div>
+              <div class="mb-3">
+                <label for="text-description" class="form-label">Description</label>
+                <textarea class="form-control" id="text-description" name="description" rows="3" maxlength="1023"></textarea>
+              </div>
+              <div class="mb-3">
+                <label for="text-raw" class="form-label">Text Content*</label>
+                <textarea class="form-control" id="text-raw" name="raw_text" rows="10" required placeholder="Paste or type your text here..."></textarea>
+                <div class="d-flex justify-content-end mt-2">
+                  <button type="button" class="btn-site btn-sm" id="cleanTextBtn" onclick="cleanText()">
+                    <span class="material-symbols-outlined me-1" style="font-size:1rem;vertical-align:middle;">auto_fix_high</span>
+                    Clean Up Text
+                  </button>
+                </div>
+              </div>
+              <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="secondary-hover-btn" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="primary-hover-btn">Upload Text</button>
+              </div>
+            </form>
           </div>
         </div>
-        <div class="modal-footer">
-          <button type="button" class="secondary-hover-btn" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="primary-hover-btn">Save</button>
-        </div>
-      </form>
+      </div>
     </div>
   </div>
 </div>
+
+<script>
+async function cleanText() {
+  const textarea = document.getElementById('text-raw');
+  const btn = document.getElementById('cleanTextBtn');
+  const rawText = textarea.value.trim();
+
+  if (!rawText) {
+    alert('Please enter some text first.');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="material-symbols-outlined me-1" style="font-size:1rem;vertical-align:middle;">hourglass_top</span> Cleaning...';
+
+  try {
+    const csrfToken = document.querySelector('#textUploadForm [name=csrfmiddlewaretoken]').value;
+    const response = await fetch('{% url "developer.api.clean_text" %}', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfToken,
+      },
+      body: JSON.stringify({ text: rawText }),
+    });
+
+    const data = await response.json();
+
+    if (response.ok && data.text) {
+      textarea.value = data.text;
+    } else {
+      alert('Clean-up failed: ' + (data.error || 'Unknown error'));
+    }
+  } catch (err) {
+    alert('Clean-up request failed: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="material-symbols-outlined me-1" style="font-size:1rem;vertical-align:middle;">auto_fix_high</span> Clean Up Text';
+  }
+}
+</script>
+
 {% endblock content %}
