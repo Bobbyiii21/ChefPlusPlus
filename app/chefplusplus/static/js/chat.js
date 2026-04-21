@@ -31,7 +31,7 @@ function fillSuggestion(el) {
   input.focus();
 }
 
-function appendMessage(role, content, isTyping = false) {
+function appendMessage(role, content, isTyping = false, intent = null) {
   if (emptyState) emptyState.style.display = 'none';
 
   const msg = document.createElement('div');
@@ -39,7 +39,17 @@ function appendMessage(role, content, isTyping = false) {
 
   const label = document.createElement('div');
   label.className = 'message-label';
-  label.textContent = role === 'user' ? 'you' : 'chef++';
+  if (role === 'user') {
+    label.textContent = 'you';
+  } else {
+    label.textContent = 'chef++';
+    if (!isTyping && intent) {
+      const badge = document.createElement('span');
+      badge.className = 'intent-badge';
+      badge.textContent = intent;
+      label.appendChild(badge);
+    }
+  }
 
   const bubble = document.createElement('div');
   bubble.className = 'message-bubble' + (isTyping ? ' thinking' : '');
@@ -88,7 +98,7 @@ async function sendMessage() {
     if (data.error) {
       appendMessage('assistant', 'Sorry, something went wrong: ' + data.error);
     } else {
-      appendMessage('assistant', data.reply);
+      appendMessage('assistant', data.reply, false, data.intent || null);
       conversationHistory.push({ role: 'user', content: text });
       conversationHistory.push({ role: 'model', content: data.reply });
     }

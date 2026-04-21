@@ -37,6 +37,7 @@ from tools.env_config import (
     vertex_chat_model,
     vertex_rag_corpus,
 )
+from tools.prompt_router import classify_intent, get_prompt_for_intent
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +158,7 @@ Keep the tone light and open. Let the user lead.
 
 _lock = threading.Lock()
 _system_prompt: str = _DEFAULT_SYSTEM_PROMPT
-_cached_model: Optional[GenerativeModel] = None
+_model_cache: dict[str, GenerativeModel] = {}  # keyed by intent string
 _vertex_inited = False
 
 
@@ -170,13 +171,13 @@ def get_system_prompt() -> str:
 
 
 def set_system_prompt(prompt: str) -> None:
-    """Replace the system prompt and invalidate the cached model."""
+    """Replace the system prompt (manual override) and flush all cached models."""
     if not prompt or not prompt.strip():
         raise ValueError("System prompt cannot be empty.")
     with _lock:
-        global _system_prompt, _cached_model
+        global _system_prompt, _model_cache
         _system_prompt = prompt.strip()
-        _cached_model = None
+        _model_cache = {}
 
 
 def reset_system_prompt() -> None:
@@ -237,12 +238,17 @@ def _build_model(prompt: str) -> GenerativeModel:
     return GenerativeModel(**kwargs)
 
 
-def _get_model() -> GenerativeModel:
-    global _cached_model
+def _get_model_for_intent(intent: str) -> GenerativeModel:
+    global _model_cache
     with _lock:
-        if _cached_model is None:
-            _cached_model = _build_model(_system_prompt)
-        return _cached_model
+        if intent not in _model_cache:
+            # Developer override: use _system_prompt for all intents
+            if _system_prompt != _DEFAULT_SYSTEM_PROMPT:
+                prompt = _system_prompt
+            else:
+                prompt = get_prompt_for_intent(intent)
+            _model_cache[intent] = _build_model(prompt)
+        return _model_cache[intent]
 
 
 # ── Chat execution ────────────────────────────────────────────────
@@ -293,9 +299,10 @@ def run_chat(
     """
     text = (message or "").strip()
     if not text:
-        return {"reply": "", "error": "Message is required."}
+        return {"reply": "", "error": "Message is required.", "intent": ""}
 
-    model = _get_model()
+    intent = classify_intent(text)
+    model = _get_model_for_intent(intent)
     contents = _build_contents(history, text)
 
     last_exc: Exception | None = None
@@ -305,7 +312,7 @@ def run_chat(
             break
         except (ValueError, RuntimeError) as exc:
             logger.exception("Configuration error")
-            return {"reply": "", "error": str(exc)}
+            return {"reply": "", "error": str(exc), "intent": intent}
         except google_auth_exceptions.DefaultCredentialsError:
             logger.warning("Application Default Credentials not found")
             return {
@@ -314,6 +321,7 @@ def run_chat(
                     "Google Application Default Credentials are not set. "
                     "Run: gcloud auth application-default login"
                 ),
+                "intent": intent,
             }
         except google_exceptions.GoogleAPIError as exc:
             last_exc = exc
@@ -328,15 +336,16 @@ def run_chat(
                 continue
             logger.exception("Vertex AI API error")
             detail = getattr(exc, "message", None) or str(exc)
-            return {"reply": "", "error": f"AI service error: {detail}"}
+            return {"reply": "", "error": f"AI service error: {detail}", "intent": intent}
     else:
         detail = getattr(last_exc, "message", None) or str(last_exc)
-        return {"reply": "", "error": f"AI service error (after retries): {detail}"}
+        return {"reply": "", "error": f"AI service error (after retries): {detail}", "intent": intent}
 
     if not response.candidates:
         return {
             "reply": "",
             "error": "No response from the model (blocked or empty).",
+            "intent": intent,
         }
 
     try:
@@ -345,6 +354,7 @@ def run_chat(
         return {
             "reply": "",
             "error": "The model returned no text (safety filter or empty parts).",
+            "intent": intent,
         }
 
-    return {"reply": reply_text.strip(), "error": ""}
+    return {"reply": reply_text.strip(), "error": "", "intent": intent}
