@@ -2,9 +2,11 @@ import json
 import logging
 import os
 import tempfile
+import threading
 import uuid
 
 from django.contrib.auth.decorators import login_required
+from django.db import close_old_connections, connections, transaction
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
@@ -65,6 +67,41 @@ def _import_to_rag(gcs_uri, db_file):
         logger.exception("RAG import failed for %s", gcs_uri)
 
 
+def _background_rag_import(db_file_id: int, gcs_uri: str) -> None:
+    """
+    Run Vertex RAG import off the HTTP worker.
+
+    ``rag.import_files`` blocks for minutes while polling; doing that in the
+    request thread hits Gunicorn's ``worker_timeout``.
+    """
+    close_old_connections()
+    try:
+        db_file = DatabaseFile.objects.get(pk=db_file_id)
+        _import_to_rag(gcs_uri, db_file)
+    except DatabaseFile.DoesNotExist:
+        logger.warning(
+            "Background RAG import skipped; DatabaseFile id=%s missing", db_file_id
+        )
+    except Exception:
+        logger.exception("Background RAG import failed for id=%s", db_file_id)
+    finally:
+        connections.close_all()
+
+
+def _schedule_rag_import(db_file: DatabaseFile, gcs_uri: str) -> None:
+    """Start RAG import after the current DB transaction commits."""
+
+    def start_thread() -> None:
+        threading.Thread(
+            target=_background_rag_import,
+            args=(db_file.pk, gcs_uri),
+            name=f"rag-import-{db_file.pk}",
+            daemon=True,
+        ).start()
+
+    transaction.on_commit(start_thread)
+
+
 @login_required
 def database_files(request):
     if not allowed_visitor(request.user):
@@ -117,8 +154,11 @@ def database_files(request):
                         db_file.gcs_uri = gcs_uri
                         db_file.save(update_fields=['gcs_uri'])
 
-                        _import_to_rag(gcs_uri, db_file)
-                        success = f'File "{name}" uploaded successfully.'
+                        _schedule_rag_import(db_file, gcs_uri)
+                        success = (
+                            f'File "{name}" saved to storage. '
+                            "RAG indexing is running in the background and may take several minutes."
+                        )
                     except Exception as exc:
                         logger.exception("File upload failed")
                         db_file.delete()
@@ -160,8 +200,11 @@ def database_files(request):
                     db_file.gcs_uri = gcs_uri
                     db_file.save(update_fields=['gcs_uri'])
 
-                    _import_to_rag(gcs_uri, db_file)
-                    success = f'Text source "{name}" uploaded successfully.'
+                    _schedule_rag_import(db_file, gcs_uri)
+                    success = (
+                        f'Text source "{name}" saved. '
+                        "RAG indexing is running in the background and may take several minutes."
+                    )
                 except Exception as exc:
                     logger.exception("Text upload failed")
                     db_file.delete()
