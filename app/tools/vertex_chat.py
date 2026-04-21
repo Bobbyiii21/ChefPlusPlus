@@ -10,7 +10,9 @@ Public API
 - ``get_system_prompt()``           — read the current system prompt
 - ``set_system_prompt(text)``       — replace it (rebuilds the model)
 - ``reset_system_prompt()``         — restore the built-in default
-- ``run_chat(message, history)``    — send a turn to Gemini
+- ``run_chat(message, history, system_prompt_suffix=...)`` — send a turn to Gemini
+  (optional *system_prompt_suffix* is appended to the configured system prompt,
+  e.g. a catalog of user documents from your database)
 
 Environment variables (via ``tools.env_config``):
   GOOGLE_CLOUD_PROJECT, VERTEX_AI_LOCATION, VERTEX_CHAT_MODEL,
@@ -20,9 +22,10 @@ Environment variables (via ``tools.env_config``):
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
-from typing import Any, Optional
+from typing import Any
 
 import vertexai
 from google.api_core import exceptions as google_exceptions
@@ -31,6 +34,7 @@ from vertexai import rag
 from vertexai.generative_models import Content, GenerativeModel, Part, Tool
 
 from tools.env_config import (
+    EnvVarMissing,
     get_env,
     google_cloud_project,
     vertex_ai_location,
@@ -67,7 +71,7 @@ You are **not** a doctor or registered dietitian. You do not diagnose conditions
 
 ## Knowledge Sources
 
-Your recommendations draw from two authoritative data sources:
+You combine **general nutrition knowledge** (below) with **retrieved passages** from the user’s document library when retrieval returns them. If this prompt ends with a section titled **“Documents in the retrieval corpus (from your library)”**, treat that block as the authoritative catalog of what is indexed: each line’s **name** and **summary** tell you what may appear in RAG results—use those names when you cite user content (not raw file paths or chunk numbers).
 
 ### 1. Dietary Guidelines for Americans, 2020–2025 (USDA & HHS)
 This is the official U.S. science-based guidance on healthy eating. Your advice should be grounded in its core principles: building a healthy dietary pattern with nutrient-dense foods, customizing choices to personal needs, and limiting items high in added sugars, saturated fat, and sodium. You should also be aware of its life-stage-specific recommendations and its recognition of various healthy eating patterns (e.g., U.S.-Style, Vegetarian, Mediterranean-Style). Use this source to explain *why* certain foods or habits are recommended.
@@ -83,9 +87,22 @@ Use this source to answer questions like: "How much protein is in chicken?" or "
 
 ---
 
-### 3. User Imported Recipes and Food Data
+### 3. User library (RAG corpus)
 
-With the other documents in the RAG corpus, you can answer questions about the recipes and food data. Make sure to always reference the documents by name, not by file name or number.
+Retrieval may surface recipes, notes, or other uploads from the corpus. Prefer the **display names and summaries** from the appended catalog when they are present; when citing that material, refer to documents by those names, not internal filenames or chunk indices.
+
+## Citation Requirements for Document-Based Answers
+
+- When the prompt includes a document catalog section (``## Documents in the retrieval corpus (from your library)``), treat the response as document-based.
+- For document-based responses, end with a natural source line in this format:
+  ``Source: <document name>`` or ``Source: <doc 1>, <doc 2>``.
+- If document support is missing or uncertain, say so clearly instead of guessing.
+
+## Source lines for U.S. nutrition guidance
+
+When you give **estimated macros**, **calories per meal**, or a **sample meal plan** from general knowledge (not only the user’s uploads), close the answer with a **Source:** line that names the references, for example:
+``Source: Dietary Guidelines for Americans, 2020–2025; USDA FoodData Central``
+If user-library content meaningfully shaped the answer, **append** those document display names (from the catalog, when present) to the same line after a comma or semicolon.
 
 ## How to Respond to User Goals
 
@@ -99,6 +116,10 @@ When a user shares a personal goal, tailor your advice accordingly. Common goals
 - **Eating on a budget** — Suggest affordable nutrient-dense staples like beans, lentils, eggs, canned fish, oats, frozen vegetables, and seasonal produce.
 - **Vegetarian or vegan diets** — Acknowledge the Healthy Vegetarian Pattern from the Guidelines; help identify plant-based sources of protein, iron, calcium, B12, zinc, and omega-3s.
 - **Older adults** — Note increased needs for protein, vitamin B12, calcium, and vitamin D; encourage hydration and nutrient-dense choices.
+
+### Meal plans and macro breakdowns
+
+When you sketch a sample day of eating, a meal plan, or the user asks for macros, go beyond calories alone: for **each meal/snack** and for the **daily total**, include **protein (g), carbohydrate (g), and fat (g)** at minimum (add **fiber (g)** when it helps). Use a small summary table or clearly labeled lines so the macros are easy to scan. Treat all numbers as **rounded estimates** for illustration unless you are citing a specific database-backed food line; remind the reader that needs vary by person, activity, and health status. Always finish with the **Source:** line described above so readers know which references the numbers draw from.
 
 ---
 
@@ -114,7 +135,7 @@ When a user shares a personal goal, tailor your advice accordingly. Common goals
 
 ## Handling Uncertainty
 
-If a specific food is not in the Foundation Foods dataset, say so honestly and offer the closest relevant comparison or general guidance from the Dietary Guidelines. If a question is outside your knowledge, say so clearly and suggest the user consult a registered dietitian or their doctor.
+If a specific food is not in the Foundation Foods dataset, say so honestly and offer the closest relevant comparison or general guidance from the Dietary Guidelines. If the user asks about content from their library and retrieval does not support an answer, say so rather than guessing. If a question is outside your knowledge, say so clearly and suggest the user consult a registered dietitian or their doctor.
 
 ---
 
@@ -157,7 +178,8 @@ Keep the tone light and open. Let the user lead.
 
 _lock = threading.Lock()
 _system_prompt: str = _DEFAULT_SYSTEM_PROMPT
-_cached_model: Optional[GenerativeModel] = None
+# Full ``system_instruction`` string -> cached ``GenerativeModel`` (RAG tools match).
+_model_cache: dict[str, GenerativeModel] = {}
 _vertex_inited = False
 
 
@@ -174,9 +196,9 @@ def set_system_prompt(prompt: str) -> None:
     if not prompt or not prompt.strip():
         raise ValueError("System prompt cannot be empty.")
     with _lock:
-        global _system_prompt, _cached_model
+        global _system_prompt, _model_cache
         _system_prompt = prompt.strip()
-        _cached_model = None
+        _model_cache.clear()
 
 
 def reset_system_prompt() -> None:
@@ -237,12 +259,24 @@ def _build_model(prompt: str) -> GenerativeModel:
     return GenerativeModel(**kwargs)
 
 
-def _get_model() -> GenerativeModel:
-    global _cached_model
+def _effective_system_instruction(base: str, suffix: str) -> str:
+    extra = (suffix or "").strip()
+    if not extra:
+        return base.strip()
+    return f"{base.strip()}\n\n{extra}"
+
+
+def _get_model(effective_system_instruction: str) -> GenerativeModel:
+    """Return a cached model for this full system instruction text."""
+    global _model_cache
+    key = effective_system_instruction.strip()
     with _lock:
-        if _cached_model is None:
-            _cached_model = _build_model(_system_prompt)
-        return _cached_model
+        cached = _model_cache.get(key)
+        if cached is not None:
+            return cached
+        model = _build_model(key)
+        _model_cache[key] = model
+        return model
 
 
 # ── Chat execution ────────────────────────────────────────────────
@@ -265,6 +299,38 @@ def _build_contents(
 
 _MAX_RETRIES = 3
 _RETRY_BACKOFF = (1.0, 3.0, 6.0)
+_SOURCE_LINE_PATTERN = re.compile(r"(?im)^\s*source:\s*(?P<sources>.+?)\s*$")
+_NUMBERED_CITATION_PATTERN = re.compile(r"\[\s*\d+(?:\s*,\s*\d+)*\s*\]")
+_DOC_CATALOG_MARKER = "## Documents in the retrieval corpus (from your library)"
+_DOC_LINE_PATTERN = re.compile(r"^\s*-\s*(?P<name>[^:\n]+):", re.MULTILINE)
+_CITATION_REQUIRED_ERROR = (
+    "Document-based answers must end with `Source: <document name>` "
+    "(or a comma-separated list of document names)."
+)
+_NUMBERED_CITATION_ERROR = (
+    "Use a `Source: ...` line with document or guideline names, "
+    "not numeric references such as [1]."
+)
+
+_STRUCTURED_NUTRITION_QUERY_PATTERN = re.compile(
+    r"\b("
+    r"meal\s*plans?|"
+    r"sample\s*meal|"
+    r"macro(s)?|"
+    r"macro\s*breakdown|"
+    r"break\s*down\s*(those|the)?\s*macro|"
+    r"full[-\s]?day|"
+    r"day\s*of\s*eating|"
+    r"nutrition\s*breakdown"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_STRUCTURED_NUTRITION_SOURCE_ERROR = (
+    "For meal plans and macro breakdowns, end with a line such as: "
+    "Source: Dietary Guidelines for Americans, 2020–2025; USDA FoodData Central "
+    "(and add your library document names there if they informed the answer)."
+)
 
 _RETRYABLE_CODES = (
     429,   # RESOURCE_EXHAUSTED
@@ -281,12 +347,105 @@ def _is_retryable(exc: google_exceptions.GoogleAPIError) -> bool:
     return "quota" in msg or "rate" in msg
 
 
+def _requires_document_citation(system_prompt_suffix: str) -> bool:
+    suffix = (system_prompt_suffix or "").strip()
+    return _DOC_CATALOG_MARKER in suffix
+
+
+def _extract_source_names(reply_text: str) -> list[str]:
+    text = (reply_text or "").strip()
+    match = _SOURCE_LINE_PATTERN.search(text)
+    if not match:
+        return []
+    raw = (match.group("sources") or "").strip()
+    if not raw:
+        return []
+    parts = re.split(r"[,;]", raw)
+    return [chunk.strip().casefold() for chunk in parts if chunk.strip()]
+
+
+def _source_line_tail(reply_text: str) -> str:
+    text = (reply_text or "").strip()
+    match = _SOURCE_LINE_PATTERN.search(text)
+    if not match:
+        return ""
+    return (match.group("sources") or "").strip().casefold()
+
+
+def _user_requests_structured_nutrition(message: str) -> bool:
+    return bool(_STRUCTURED_NUTRITION_QUERY_PATTERN.search((message or "").strip()))
+
+
+def _authority_sources_in_tail(tail: str) -> bool:
+    if not tail:
+        return False
+    guides = (
+        "dietary guideline" in tail
+        or "guidelines for americans" in tail
+        or ("guideline" in tail and "american" in tail)
+    )
+    data = "usda" in tail or "fooddata" in tail
+    return guides and data
+
+
+def _structured_nutrition_sources_ok(
+    reply_text: str, system_prompt_suffix: str
+) -> bool:
+    tail = _source_line_tail(reply_text)
+    if len(tail) < 8:
+        return False
+    known = set(_document_names_from_suffix(system_prompt_suffix))
+    chunks = _extract_source_names(reply_text)
+    if known:
+        for c in chunks:
+            if c in known:
+                return True
+    return _authority_sources_in_tail(tail)
+
+
+def _has_numbered_citation(reply_text: str) -> bool:
+    return bool(_NUMBERED_CITATION_PATTERN.search((reply_text or "").strip()))
+
+
+def _document_names_from_suffix(system_prompt_suffix: str) -> list[str]:
+    suffix = (system_prompt_suffix or "").strip()
+    names: list[str] = []
+    for match in _DOC_LINE_PATTERN.finditer(suffix):
+        name = (match.group("name") or "").strip()
+        if name:
+            names.append(name.casefold())
+    return names
+
+
+def _reply_references_known_document(reply_text: str, system_prompt_suffix: str) -> bool:
+    reply = (reply_text or "").casefold()
+    if not reply:
+        return False
+    return any(name in reply for name in _document_names_from_suffix(system_prompt_suffix))
+
+
+def _has_valid_source_line(reply_text: str, system_prompt_suffix: str) -> bool:
+    source_names = _extract_source_names(reply_text)
+    if not source_names:
+        return False
+    known_docs = set(_document_names_from_suffix(system_prompt_suffix))
+    if not known_docs:
+        return False
+    return any(name in known_docs for name in source_names)
+
+
 def run_chat(
     message: str,
     history: list[dict[str, Any]] | None = None,
+    *,
+    system_prompt_suffix: str = "",
 ) -> dict[str, Any]:
     """
     Send *message* (with optional multi-turn *history*) to Vertex Gemini.
+
+    If *system_prompt_suffix* is non-empty, it is appended to the current
+    system prompt (after a blank line) for this call only — useful for
+    listing user-uploaded documents the RAG corpus may retrieve.
 
     Retries up to 3 times on transient quota / rate-limit errors.
     Returns ``{"reply": str, "error": str}``.
@@ -295,7 +454,13 @@ def run_chat(
     if not text:
         return {"reply": "", "error": "Message is required."}
 
-    model = _get_model()
+    with _lock:
+        base_prompt = _system_prompt
+    effective = _effective_system_instruction(base_prompt, system_prompt_suffix)
+    try:
+        model = _get_model(effective)
+    except EnvVarMissing as exc:
+        return {"reply": "", "error": str(exc)}
     contents = _build_contents(history, text)
 
     last_exc: Exception | None = None
@@ -347,4 +512,22 @@ def run_chat(
             "error": "The model returned no text (safety filter or empty parts).",
         }
 
-    return {"reply": reply_text.strip(), "error": ""}
+    cleaned_reply = reply_text.strip()
+    if _requires_document_citation(system_prompt_suffix) and _has_numbered_citation(
+        cleaned_reply
+    ):
+        return {"reply": "", "error": _NUMBERED_CITATION_ERROR}
+
+    if (
+        _requires_document_citation(system_prompt_suffix)
+        and _reply_references_known_document(cleaned_reply, system_prompt_suffix)
+        and not _has_valid_source_line(cleaned_reply, system_prompt_suffix)
+    ):
+        return {"reply": "", "error": _CITATION_REQUIRED_ERROR}
+
+    if _user_requests_structured_nutrition(text) and not _structured_nutrition_sources_ok(
+        cleaned_reply, system_prompt_suffix
+    ):
+        return {"reply": "", "error": _STRUCTURED_NUTRITION_SOURCE_ERROR}
+
+    return {"reply": cleaned_reply, "error": ""}
