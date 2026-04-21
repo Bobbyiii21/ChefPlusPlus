@@ -1,8 +1,8 @@
 import json
+import re
 
 from django.http import JsonResponse
-from django.shortcuts import render, redirect
-from django.contrib.auth.decorators import login_required
+from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
@@ -31,6 +31,53 @@ def _rag_documents_system_prompt_suffix() -> str:
             desc = "(No description provided.)"
         lines.append(f"- {name}: {desc}")
     return "\n".join(lines)
+
+
+_SOURCE_LINE_RE = re.compile(
+    r"(?im)^\s*source:\s*(?P<sources>.+?)\s*$",
+)
+
+
+def _source_line_chunks(reply: str) -> list[str]:
+    """Split the first ``Source:`` line into comma/semicolon-separated parts."""
+    text = (reply or "").strip()
+    match = _SOURCE_LINE_RE.search(text)
+    if not match:
+        return []
+    raw = (match.group("sources") or "").strip()
+    if not raw:
+        return []
+    parts = re.split(r"[,;]", raw)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def reference_downloads_for_reply(request, reply: str) -> list[dict[str, str]]:
+    """
+    Match ``Source:`` segments to uploaded :class:`~developer.models.DatabaseFile`
+    rows (file-backed only) and return absolute download URLs.
+    """
+    chunks = _source_line_chunks(reply)
+    if not chunks:
+        return []
+
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for chunk in chunks:
+        key = chunk.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        dbf = DatabaseFile.objects.filter(name__iexact=chunk).first()
+        if dbf is None:
+            continue
+        if not dbf.file:
+            continue
+        try:
+            url = request.build_absolute_uri(dbf.file.url)
+        except ValueError:
+            continue
+        out.append({"name": dbf.name, "url": url})
+    return out
 
 
 def index(request):
@@ -73,4 +120,11 @@ def chat_api(request):
     )
 
     status = 200 if not result.get("error") else 502
-    return JsonResponse(result, status=status)
+    payload = dict(result)
+    if not result.get("error"):
+        payload["reference_downloads"] = reference_downloads_for_reply(
+            request, result.get("reply") or ""
+        )
+    else:
+        payload["reference_downloads"] = []
+    return JsonResponse(payload, status=status)
