@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block content %}
+{% load static %}
+
+<div class="p-3 mt-4">
+  <div class="container">
+
+    <div class="mb-4">
+      <h3 class="section-header mb-0">Admin Tools</h3>
+    </div>
+    <hr>
+
+    <div class="row g-3 mt-2">
+
+      <div class="col-md-4">
+        <a href="{% url 'developer.files' %}" class="text-decoration-none">
+          <div class="card p-3 h-100 developer-card">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <span class="material-symbols-outlined developer-card-icon">database</span>
+              <span class="developer-card-title">Update Database</span>
+            </div>
+            <p class="developer-card-desc mb-0">Upload and manage files in the database.</p>
+          </div>
+        </a>
+      </div>
+
+      <div class="col-md-4">
+        <a href="{% url 'developer.logs' %}" class="text-decoration-none">
+          <div class="card p-3 h-100 developer-card">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <span class="material-symbols-outlined developer-card-icon">query_stats</span>
+              <span class="developer-card-title">Usage Logs</span>
+            </div>
+            <p class="developer-card-desc mb-0">View query history, response times, and errors.</p>
+          </div>
+        </a>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+{% endblock content %}
