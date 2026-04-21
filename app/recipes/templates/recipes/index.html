@@ -1,0 +1,127 @@
+{% extends 'base.html' %}
+{% block content %}
+{% load static %}
+
+<div class="p-3 mt-4">
+  <div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h3 class="section-header mb-0">My Recipes</h3>
+      <span class="badge bg-primary">{{ template_data.total_recipes }} recipes</span>
+    </div>
+    <hr>
+
+    {% if recipes %}
+      <div class="row g-3 mt-2">
+        {% for recipe in recipes %}
+          <div class="col-md-6 col-lg-4">
+            <div class="card h-100 recipe-card">
+              {% if recipe.image %}
+                <img src="{{ recipe.image.url }}" class="card-img-top recipe-image" alt="{{ recipe.title }}">
+              {% else %}
+                <div class="recipe-image-placeholder">
+                  <span class="material-symbols-outlined">restaurant</span>
+                </div>
+              {% endif %}
+              <div class="card-body d-flex flex-column">
+                <h5 class="card-title recipe-title">{{ recipe.title }}</h5>
+                <p class="card-text recipe-content">{{ recipe.content|truncatewords:30 }}</p>
+                <div class="mt-auto">
+                  <small class="text-muted d-block mb-2">
+                    <span class="material-symbols-outlined" style="font-size: 0.9rem; vertical-align: middle;">schedule</span>
+                    {{ recipe.created_at|date:"M d, Y" }}
+                  </small>
+                  <a href="{% url 'recipes.detail' recipe.id %}" class="btn-site btn-sm">
+                    View Recipe
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      {% if is_paginated %}
+        <nav aria-label="Page navigation" class="mt-4">
+          <ul class="pagination justify-content-center">
+            {% if page_obj.has_previous %}
+              <li class="page-item">
+                <a class="page-link" href="?page=1">First</a>
+              </li>
+              <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+              </li>
+            {% endif %}
+
+            <li class="page-item active">
+              <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+            </li>
+
+            {% if page_obj.has_next %}
+              <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+              </li>
+              <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">Last</a>
+              </li>
+            {% endif %}
+          </ul>
+        </nav>
+      {% endif %}
+    {% else %}
+      <div class="alert alert-info mt-3">
+        <span class="material-symbols-outlined me-2" style="vertical-align: middle;">info</span>
+        No recipes yet. Save a recipe from the chatbot to see it here!
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+  .recipe-card {
+    transition: box-shadow 0.15s, transform 0.15s;
+    border: 1px solid var(--border);
+    background-color: var(--surface);
+  }
+
+  .recipe-card:hover {
+    box-shadow: 0 0 4px 2px var(--border);
+    transform: translateY(-2px);
+  }
+
+  .recipe-image {
+    height: 200px;
+    object-fit: cover;
+  }
+
+  .recipe-image-placeholder {
+    height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--border);
+    color: var(--text-muted);
+  }
+
+  .recipe-image-placeholder .material-symbols-outlined {
+    font-size: 3rem;
+  }
+
+  .recipe-title {
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 0.5rem;
+  }
+
+  .recipe-content {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    line-height: 1.4;
+  }
+
+  .btn-sm {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.875rem;
+  }
+</style>
+
+{% endblock content %}

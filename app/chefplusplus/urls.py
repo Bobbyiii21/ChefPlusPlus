@@ -9,6 +9,7 @@ urlpatterns = [
     path('', include('home.urls')),
     #path('chat/', include('chat.urls')),
     path('developer/', include('developer.urls')),
+    path('recipes/', include('recipes.urls')),
 ]
 
 urlpatterns += static(settings.MEDIA_URL,

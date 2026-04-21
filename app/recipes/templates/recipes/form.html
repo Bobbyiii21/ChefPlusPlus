@@ -1,0 +1,176 @@
+{% extends 'base.html' %}
+{% block content %}
+{% load static %}
+
+<div class="p-3 mt-4">
+  <div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <a href="{% url 'recipes.detail' recipe.id %}" class="btn-link">
+        <span class="material-symbols-outlined" style="vertical-align: middle;">arrow_back</span>
+        Back to Recipe
+      </a>
+    </div>
+    <hr>
+
+    <div class="row">
+      <div class="col-lg-8 mx-auto">
+        <div class="card recipe-form-card">
+          <div class="card-body">
+            <h1 class="recipe-form-title">Edit Recipe</h1>
+
+            <form method="post" enctype="multipart/form-data" class="recipe-form">
+              {% csrf_token %}
+              
+              <div class="form-group mb-3">
+                <label for="{{ form.title.id_for_label }}" class="form-label">Recipe Title</label>
+                {{ form.title }}
+                {% if form.title.errors %}
+                  <div class="invalid-feedback d-block">
+                    {{ form.title.errors }}
+                  </div>
+                {% endif %}
+              </div>
+
+              <div class="form-group mb-3">
+                <label for="{{ form.content.id_for_label }}" class="form-label">Instructions</label>
+                {{ form.content }}
+                {% if form.content.errors %}
+                  <div class="invalid-feedback d-block">
+                    {{ form.content.errors }}
+                  </div>
+                {% endif %}
+              </div>
+
+              <div class="form-group mb-3">
+                <label for="{{ form.image.id_for_label }}" class="form-label">Recipe Image (Optional)</label>
+                {% if recipe.image %}
+                  <div class="mb-2">
+                    <img src="{{ recipe.image.url }}" alt="{{ recipe.title }}" class="img-thumbnail" style="max-width: 200px;">
+                  </div>
+                {% endif %}
+                {{ form.image }}
+                <small class="form-text text-muted d-block mt-2">
+                  Leave blank to keep the current image
+                </small>
+                {% if form.image.errors %}
+                  <div class="invalid-feedback d-block">
+                    {{ form.image.errors }}
+                  </div>
+                {% endif %}
+              </div>
+
+              <div class="recipe-form-actions">
+                <button type="submit" class="btn-site">
+                  <span class="material-symbols-outlined" style="font-size: 0.9rem; vertical-align: middle;">save</span>
+                  Save Changes
+                </button>
+                <a href="{% url 'recipes.detail' recipe.id %}" class="btn-site">
+                  Cancel
+                </a>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .recipe-form-card {
+    border: 1px solid var(--border);
+    background-color: var(--surface);
+  }
+
+  .recipe-form-title {
+    color: var(--text);
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+    font-size: 1.75rem;
+  }
+
+  .recipe-form .form-label {
+    color: var(--text);
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+  }
+
+  .recipe-form input[type="text"],
+  .recipe-form input[type="file"],
+  .recipe-form textarea {
+    background-color: var(--background);
+    border: 1px solid var(--border);
+    color: var(--text);
+    width: 100%;
+    padding: 0.5rem;
+    border-radius: 4px;
+    font-family: inherit;
+  }
+
+  .recipe-form input[type="text"]:focus,
+  .recipe-form input[type="file"]:focus,
+  .recipe-form textarea:focus {
+    background-color: var(--background);
+    border-color: var(--primary);
+    color: var(--text);
+    outline: none;
+    box-shadow: 0 0 0 0.2rem rgba(198, 142, 93, 0.25);
+  }
+
+  .recipe-form textarea {
+    min-height: 200px;
+    resize: vertical;
+  }
+
+  .form-text {
+    color: var(--text-muted) !important;
+  }
+
+  .invalid-feedback {
+    color: #dc3545;
+    font-size: 0.875rem;
+  }
+
+  .recipe-form-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 2rem;
+  }
+
+  .recipe-form-actions a,
+  .recipe-form-actions button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .btn-link {
+    color: var(--primary);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .btn-link:hover {
+    color: var(--secondary);
+  }
+
+  @media (max-width: 768px) {
+    .recipe-form-title {
+      font-size: 1.25rem;
+    }
+
+    .recipe-form-actions {
+      flex-direction: column;
+    }
+
+    .recipe-form-actions a,
+    .recipe-form-actions button {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+</style>
+
+{% endblock content %}

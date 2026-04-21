@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     #'chat',
     'developer',
     'home',
+    'recipes',
 
 ]
 

@@ -3,8 +3,9 @@ import json
 from django.http import JsonResponse
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.views.decorators.http import require_POST
+from recipes.models import Recipe
 
 
 def index(request):
@@ -42,3 +43,36 @@ def chat_api(request):
 
     status = 200 if not result.get("error") else 502
     return JsonResponse(result, status=status)
+
+
+@csrf_protect
+@require_POST
+@login_required
+def save_recipe(request):
+    """Save a chatbot response as a recipe."""
+    try:
+        body = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({"success": False, "error": "Invalid JSON."}, status=400)
+
+    title = (body.get("title") or "").strip()
+    content = (body.get("content") or "").strip()
+
+    if not title:
+        return JsonResponse({"success": False, "error": "Recipe title is required."}, status=400)
+    if not content:
+        return JsonResponse({"success": False, "error": "Recipe content is required."}, status=400)
+
+    try:
+        recipe = Recipe.objects.create(
+            user=request.user,
+            title=title,
+            content=content
+        )
+        return JsonResponse({
+            "success": True,
+            "recipe_id": recipe.id,
+            "message": "Recipe saved successfully!"
+        })
+    except Exception as e:
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
