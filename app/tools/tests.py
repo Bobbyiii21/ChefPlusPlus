@@ -166,7 +166,7 @@ class TestSystemPromptManagement(unittest.TestCase):
     def setUp(self):
         import tools.vertex_chat as vc
         self._vc = vc
-        vc._cached_model = None
+        vc._model_cache = {}
         vc._vertex_inited = False
         vc._system_prompt = vc._DEFAULT_SYSTEM_PROMPT
 
@@ -179,9 +179,9 @@ class TestSystemPromptManagement(unittest.TestCase):
         self.assertEqual(self._vc.get_system_prompt(), "You are a test bot.")
 
     def test_set_prompt_invalidates_cache(self):
-        self._vc._cached_model = "fake_model"
+        self._vc._model_cache = {"general": "fake_model", "factual": "fake_model2"}
         self._vc.set_system_prompt("New prompt")
-        self.assertIsNone(self._vc._cached_model)
+        self.assertEqual(self._vc._model_cache, {})
 
     def test_set_empty_prompt_raises(self):
         with self.assertRaises(ValueError):
@@ -207,7 +207,7 @@ class TestRunChat(unittest.TestCase):
     def setUp(self):
         import tools.vertex_chat as vc
         self._vc = vc
-        vc._cached_model = None
+        vc._model_cache = {}
         vc._vertex_inited = False
         vc._system_prompt = vc._DEFAULT_SYSTEM_PROMPT
         import tools.env_config as ec
@@ -229,6 +229,7 @@ class TestRunChat(unittest.TestCase):
         result = self._vc.run_chat("What is protein?")
         self.assertEqual(result["reply"], "Hello! I can help with nutrition.")
         self.assertEqual(result["error"], "")
+        self.assertIn("intent", result)
 
     @mock.patch("tools.vertex_chat.vertexai")
     @mock.patch("tools.vertex_chat.GenerativeModel")
@@ -798,6 +799,178 @@ class TestCleanTextDefaultModel(unittest.TestCase):
         self._tc.clean_text("test")
         call_kwargs = MockModel.call_args.kwargs
         self.assertEqual(call_kwargs["model_name"], "gemini-1.5-flash")
+
+
+# ====================================================================
+# prompt_router tests
+# ====================================================================
+
+
+class TestClassifyIntent(unittest.TestCase):
+    """tools.prompt_router.classify_intent routing logic."""
+
+    def _ci(self, msg):
+        from tools.prompt_router import classify_intent
+        return classify_intent(msg)
+
+    def test_factual_how_much(self):
+        self.assertEqual(self._ci("How much protein is in chicken?"), "factual")
+
+    def test_factual_calories_in(self):
+        self.assertEqual(self._ci("How many calories in a banana?"), "factual")
+
+    def test_factual_nutrition_facts(self):
+        self.assertEqual(self._ci("What are the nutrition facts for oats?"), "factual")
+
+    def test_explain_why(self):
+        self.assertEqual(self._ci("Why is fiber important for digestion?"), "explain")
+
+    def test_explain_how_does(self):
+        self.assertEqual(self._ci("How does sugar affect blood sugar levels?"), "explain")
+
+    def test_explain_explain_keyword(self):
+        self.assertEqual(self._ci("Explain the role of omega-3 fatty acids"), "explain")
+
+    def test_creative_recipe(self):
+        self.assertEqual(self._ci("Can you give me a recipe for lentil soup?"), "creative")
+
+    def test_creative_what_can_i_make(self):
+        self.assertEqual(self._ci("What can I make with chickpeas and spinach?"), "creative")
+
+    def test_creative_meal_ideas(self):
+        self.assertEqual(self._ci("Give me some healthy breakfast ideas"), "creative")
+
+    def test_goal_i_want_to(self):
+        self.assertEqual(self._ci("I want to lose weight, what should I eat?"), "goal")
+
+    def test_goal_trying_to(self):
+        self.assertEqual(self._ci("I'm trying to build muscle"), "goal")
+
+    def test_goal_blood_sugar(self):
+        self.assertEqual(self._ci("I need to manage my blood sugar"), "goal")
+
+    def test_general_fallback(self):
+        self.assertEqual(self._ci("Hi"), "general")
+
+    def test_general_empty(self):
+        self.assertEqual(self._ci(""), "general")
+
+    def test_general_none(self):
+        self.assertEqual(self._ci(None), "general")
+
+    def test_goal_beats_factual(self):
+        # "I want to know how many calories" → goal wins (checked first)
+        self.assertEqual(self._ci("I want to know how many calories I need"), "goal")
+
+
+class TestGetPromptForIntent(unittest.TestCase):
+    """tools.prompt_router.get_prompt_for_intent returns correct prompts."""
+
+    def _gp(self, intent):
+        from tools.prompt_router import get_prompt_for_intent
+        return get_prompt_for_intent(intent)
+
+    def test_factual_prompt_has_format_directive(self):
+        self.assertIn("Lead with the specific number", self._gp("factual"))
+
+    def test_explain_prompt_has_format_directive(self):
+        self.assertIn("what it is", self._gp("explain"))
+
+    def test_creative_prompt_has_format_directive(self):
+        self.assertIn("2\u20133 distinct", self._gp("creative"))
+
+    def test_goal_prompt_has_format_directive(self):
+        self.assertIn("3 prioritized", self._gp("goal"))
+
+    def test_unknown_intent_falls_back_to_general(self):
+        from tools.prompt_router import INTENT_PROMPTS
+        self.assertEqual(self._gp("unknown_xyz"), INTENT_PROMPTS["general"])
+
+
+class TestRunChatIntentRouting(unittest.TestCase):
+    """run_chat classifies intent and returns it in the result."""
+
+    _ENV = {
+        "GOOGLE_CLOUD_PROJECT": "test-project",
+        "VERTEX_AI_LOCATION": "us-central1",
+        "VERTEX_CHAT_MODEL": "gemini-2.0-flash",
+    }
+
+    def setUp(self):
+        import tools.vertex_chat as vc
+        self._vc = vc
+        vc._model_cache = {}
+        vc._vertex_inited = False
+        vc._system_prompt = vc._DEFAULT_SYSTEM_PROMPT
+        import tools.env_config as ec
+        ec._dotenv_loaded = False
+
+    @mock.patch("tools.vertex_chat.vertexai")
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_factual_intent_returned(self, MockModel, mock_vertexai):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = "About 31g of protein per 100g."
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        result = self._vc.run_chat("How much protein is in salmon?")
+        self.assertEqual(result["intent"], "factual")
+        self.assertEqual(result["error"], "")
+
+    @mock.patch("tools.vertex_chat.vertexai")
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_creative_intent_returned(self, MockModel, mock_vertexai):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = "Try lentil curry or chickpea stew."
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        result = self._vc.run_chat("What can I make with chickpeas?")
+        self.assertEqual(result["intent"], "creative")
+
+    @mock.patch("tools.vertex_chat.vertexai")
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_intent_prompt_used_for_model(self, MockModel, mock_vertexai):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = "Fiber helps digestion."
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        self._vc.run_chat("Why is fiber important?")
+        call_kwargs = MockModel.call_args.kwargs
+        # explain-intent prompt contains the what→why→how directive
+        self.assertIn("what it is", call_kwargs.get("system_instruction", ""))
+
+    @mock.patch("tools.vertex_chat.vertexai")
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_model_cached_per_intent(self, MockModel, mock_vertexai):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = "Answer."
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        self._vc.run_chat("How much protein in eggs?")   # factual
+        self._vc.run_chat("How many calories in rice?")  # factual again
+        # GenerativeModel built once for factual, not twice
+        self.assertEqual(MockModel.call_count, 1)
+
+    @mock.patch("tools.vertex_chat.vertexai")
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_override_prompt_used_for_all_intents(self, MockModel, mock_vertexai):
+        self._vc.set_system_prompt("You are a test bot.")
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = "Test reply."
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        self._vc.run_chat("How much protein in chicken?")
+        call_kwargs = MockModel.call_args.kwargs
+        self.assertIn("test bot", call_kwargs.get("system_instruction", ""))
 
 
 if __name__ == "__main__":
