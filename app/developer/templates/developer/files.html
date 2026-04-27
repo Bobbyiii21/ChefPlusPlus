@@ -108,13 +108,20 @@
                 <input type="text" class="form-control" id="file-name" name="name" maxlength="255" required>
               </div>
               <div class="mb-3">
-                <label for="file-description" class="form-label">Description</label>
-                <textarea class="form-control" id="file-description" name="description" rows="3" maxlength="1023"></textarea>
+                <label for="file-description" class="form-label">Description*</label>
+                <textarea class="form-control" id="file-description" name="description" rows="3" maxlength="1023" required placeholder="Summarize what this document is (or use the button below)."></textarea>
+                <div class="d-flex justify-content-end mt-2">
+                  <button type="button" class="btn-site btn-sm" id="suggestFileDescriptionBtn" onclick="suggestDescriptionFromFile()">
+                    <span class="material-symbols-outlined me-1" style="font-size:1rem;vertical-align:middle;">auto_awesome</span>
+                    Generate from file
+                  </button>
+                </div>
+                <div class="form-text text-muted">Required. A precise description improves retrieval and answer quality. <strong>Generate from file</strong> uses Gemini on your PDF, TXT, or JSON to draft it.</div>
               </div>
               <div class="mb-3">
-                <label for="file-upload-input" class="form-label">File (PDF or TXT)*</label>
-                <input type="file" class="form-control" id="file-upload-input" name="file_upload" accept=".pdf,.txt" required>
-                <div class="form-text text-muted">Accepted formats: .pdf, .txt</div>
+                <label for="file-upload-input" class="form-label">File (PDF, TXT, or JSON)*</label>
+                <input type="file" class="form-control" id="file-upload-input" name="file_upload" accept=".pdf,.txt,.json,application/json" required>
+                <div class="form-text text-muted">Accepted formats: .pdf, .txt, .json</div>
               </div>
               <div class="d-flex justify-content-end gap-2">
                 <button type="button" class="secondary-hover-btn" data-bs-dismiss="modal">Cancel</button>
@@ -133,8 +140,15 @@
                 <input type="text" class="form-control" id="text-name" name="name" maxlength="255" required>
               </div>
               <div class="mb-3">
-                <label for="text-description" class="form-label">Description</label>
-                <textarea class="form-control" id="text-description" name="description" rows="3" maxlength="1023"></textarea>
+                <label for="text-description" class="form-label">Description*</label>
+                <textarea class="form-control" id="text-description" name="description" rows="3" maxlength="1023" required placeholder="Summarize what this text is (or use the button below)."></textarea>
+                <div class="d-flex justify-content-end mt-2">
+                  <button type="button" class="btn-site btn-sm" id="suggestTextDescriptionBtn" onclick="suggestDescriptionFromText()">
+                    <span class="material-symbols-outlined me-1" style="font-size:1rem;vertical-align:middle;">auto_awesome</span>
+                    Generate from text
+                  </button>
+                </div>
+                <div class="form-text text-muted">Required. A precise description improves retrieval and answer quality. <strong>Generate from text</strong> uses Gemini on the content below to draft it.</div>
               </div>
               <div class="mb-3">
                 <label for="text-raw" class="form-label">Text Content*</label>
@@ -159,6 +173,84 @@
 </div>
 
 <script>
+const suggestDescriptionUrl = '{% url "developer.api.suggest_description" %}';
+
+async function suggestDescriptionFromFile() {
+  const input = document.getElementById('file-upload-input');
+  const desc = document.getElementById('file-description');
+  const btn = document.getElementById('suggestFileDescriptionBtn');
+  const file = input.files[0];
+
+  if (!file) {
+    alert('Choose a PDF, TXT, or JSON file first.');
+    return;
+  }
+
+  const csrfToken = document.querySelector('#fileUploadForm [name=csrfmiddlewaretoken]').value;
+  btn.disabled = true;
+  const originalHtml = btn.innerHTML;
+  btn.innerHTML = '<span class="material-symbols-outlined me-1" style="font-size:1rem;vertical-align:middle;">hourglass_top</span> Generating...';
+
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(suggestDescriptionUrl, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': csrfToken },
+      body: formData,
+    });
+    const data = await response.json();
+    if (response.ok && data.description) {
+      desc.value = data.description;
+    } else {
+      alert('Could not generate description: ' + (data.error || 'Unknown error'));
+    }
+  } catch (err) {
+    alert('Request failed: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+  }
+}
+
+async function suggestDescriptionFromText() {
+  const raw = document.getElementById('text-raw').value.trim();
+  const desc = document.getElementById('text-description');
+  const btn = document.getElementById('suggestTextDescriptionBtn');
+
+  if (!raw) {
+    alert('Enter some text in Text Content first.');
+    return;
+  }
+
+  const csrfToken = document.querySelector('#textUploadForm [name=csrfmiddlewaretoken]').value;
+  btn.disabled = true;
+  const originalHtml = btn.innerHTML;
+  btn.innerHTML = '<span class="material-symbols-outlined me-1" style="font-size:1rem;vertical-align:middle;">hourglass_top</span> Generating...';
+
+  try {
+    const response = await fetch(suggestDescriptionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfToken,
+      },
+      body: JSON.stringify({ text: raw }),
+    });
+    const data = await response.json();
+    if (response.ok && data.description) {
+      desc.value = data.description;
+    } else {
+      alert('Could not generate description: ' + (data.error || 'Unknown error'));
+    }
+  } catch (err) {
+    alert('Request failed: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+  }
+}
+
 async function cleanText() {
   const textarea = document.getElementById('text-raw');
   const btn = document.getElementById('cleanTextBtn');

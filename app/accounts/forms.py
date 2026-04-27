@@ -31,6 +31,7 @@ class CustomUserCreationForm(UserCreationForm):
             self.fields[field].help_text = None
         
 
+
     class Meta:
         model = CPPUser
         fields = ('username', 'email', 'password1', 'password2')

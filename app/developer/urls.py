@@ -7,4 +7,9 @@ urlpatterns = [
     path('files/delete/<int:file_id>', views.delete_database_file, name='developer.files.delete'),
     path('api/clean-text', views.clean_text_api, name='developer.api.clean_text'),
     path('logs', views.usage_logs, name='developer.logs'),
+    path(
+        'api/suggest-description',
+        views.suggest_description_api,
+        name='developer.api.suggest_description',
+    ),
 ]

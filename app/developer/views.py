@@ -2,9 +2,11 @@ import json
 import logging
 import os
 import tempfile
+import threading
 import uuid
 
 from django.contrib.auth.decorators import login_required
+from django.db import close_old_connections, connections, transaction
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
@@ -22,15 +24,16 @@ from tools.rag_files import (
     delete_file as rag_delete_file,
 )
 from tools.text_cleaner import clean_text
+from tools.description_summary import summarize_for_description
+from tools.source_text_extract import extract_text_from_upload
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_EXTENSIONS = {'.pdf', '.txt'}
+ALLOWED_EXTENSIONS = {'.pdf', '.txt', '.json'}
 
 
 def allowed_visitor(user: CPPUser):
     return user.is_superuser
-
 
 @login_required
 def index(request):
@@ -64,6 +67,41 @@ def _import_to_rag(gcs_uri, db_file):
         logger.exception("RAG import failed for %s", gcs_uri)
 
 
+def _background_rag_import(db_file_id: int, gcs_uri: str) -> None:
+    """
+    Run Vertex RAG import off the HTTP worker.
+
+    ``rag.import_files`` blocks for minutes while polling; doing that in the
+    request thread hits Gunicorn's ``worker_timeout``.
+    """
+    close_old_connections()
+    try:
+        db_file = DatabaseFile.objects.get(pk=db_file_id)
+        _import_to_rag(gcs_uri, db_file)
+    except DatabaseFile.DoesNotExist:
+        logger.warning(
+            "Background RAG import skipped; DatabaseFile id=%s missing", db_file_id
+        )
+    except Exception:
+        logger.exception("Background RAG import failed for id=%s", db_file_id)
+    finally:
+        connections.close_all()
+
+
+def _schedule_rag_import(db_file: DatabaseFile, gcs_uri: str) -> None:
+    """Start RAG import after the current DB transaction commits."""
+
+    def start_thread() -> None:
+        threading.Thread(
+            target=_background_rag_import,
+            args=(db_file.pk, gcs_uri),
+            name=f"rag-import-{db_file.pk}",
+            daemon=True,
+        ).start()
+
+    transaction.on_commit(start_thread)
+
+
 @login_required
 def database_files(request):
     if not allowed_visitor(request.user):
@@ -82,12 +120,17 @@ def database_files(request):
 
             if not name:
                 error = 'Name is required.'
+            elif not description:
+                error = (
+                    'Description is required. It tells the model what this source is about '
+                    'so answers stay accurate and on-topic.'
+                )
             elif not uploaded_file:
                 error = 'Please select a file to upload.'
             else:
                 valid, ext = _validate_file_extension(uploaded_file)
                 if not valid:
-                    error = f'Unsupported file type "{ext}". Only PDF and TXT files are allowed.'
+                    error = f'Unsupported file type "{ext}". Only PDF, TXT, and JSON files are allowed.'
                 else:
                     db_file = DatabaseFile(
                         name=name,
@@ -111,8 +154,11 @@ def database_files(request):
                         db_file.gcs_uri = gcs_uri
                         db_file.save(update_fields=['gcs_uri'])
 
-                        _import_to_rag(gcs_uri, db_file)
-                        success = f'File "{name}" uploaded successfully.'
+                        _schedule_rag_import(db_file, gcs_uri)
+                        success = (
+                            f'File "{name}" saved to storage. '
+                            "RAG indexing is running in the background and may take several minutes."
+                        )
                     except Exception as exc:
                         logger.exception("File upload failed")
                         db_file.delete()
@@ -128,6 +174,11 @@ def database_files(request):
 
             if not name:
                 error = 'Name is required.'
+            elif not description:
+                error = (
+                    'Description is required. It tells the model what this source is about '
+                    'so answers stay accurate and on-topic.'
+                )
             elif not raw_text:
                 error = 'Text content is required.'
             else:
@@ -149,8 +200,11 @@ def database_files(request):
                     db_file.gcs_uri = gcs_uri
                     db_file.save(update_fields=['gcs_uri'])
 
-                    _import_to_rag(gcs_uri, db_file)
-                    success = f'Text source "{name}" uploaded successfully.'
+                    _schedule_rag_import(db_file, gcs_uri)
+                    success = (
+                        f'Text source "{name}" saved. '
+                        "RAG indexing is running in the background and may take several minutes."
+                    )
                 except Exception as exc:
                     logger.exception("Text upload failed")
                     db_file.delete()
@@ -243,3 +297,64 @@ def usage_logs(request):
     template_data['avg_response_time'] = int(total_response_time / num_queries) if num_queries else 0
 
     return render(request, 'developer/logs.html', {'template_data': template_data})
+  
+@require_POST
+def suggest_description_api(request):
+    if not allowed_visitor(request.user):
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+
+    body_text = None
+
+    uploaded = request.FILES.get('file')
+    if uploaded:
+        extracted, ext_err = extract_text_from_upload(uploaded)
+        if ext_err:
+            return JsonResponse({'error': ext_err}, status=400)
+        body_text = extracted
+    else:
+        try:
+            body = json.loads(request.body)
+        except (json.JSONDecodeError, AttributeError):
+            return JsonResponse({'error': 'Invalid request body.'}, status=400)
+
+        body_text = ""
+        if isinstance(body, dict):
+            t = (body.get("text") or "").strip()
+            if t:
+                body_text = t
+            elif "document" in body:
+                doc = body.get("document")
+                if doc is None:
+                    return JsonResponse({'error': '"document" must not be null.'}, status=400)
+                try:
+                    body_text = json.dumps(doc, ensure_ascii=False, indent=2)
+                except (TypeError, ValueError) as exc:
+                    return JsonResponse(
+                        {'error': f"Could not serialize document: {exc}"},
+                        status=400,
+                    )
+        elif isinstance(body, list):
+            try:
+                body_text = json.dumps(body, ensure_ascii=False, indent=2)
+            except (TypeError, ValueError) as exc:
+                return JsonResponse(
+                    {'error': f"Could not serialize JSON array: {exc}"},
+                    status=400,
+                )
+
+    if not body_text:
+        return JsonResponse(
+            {
+                'error': (
+                    'Provide multipart "file", a JSON body with "text", '
+                    'a JSON object with "document", or a top-level JSON array.'
+                ),
+            },
+            status=400,
+        )
+
+    result = summarize_for_description(body_text)
+    if result.get('error'):
+        return JsonResponse({'error': result['error']}, status=502)
+
+    return JsonResponse({'description': result['description']})
