@@ -187,6 +187,7 @@ def chat_api(request):
 
     status = 200 if not result.get("error") else 502
     payload = dict(result)
+    payload.pop("sources_used", None)
     if not result.get("error"):
         payload["reference_downloads"] = reference_downloads_for_source_refs(
             request, result.get("sources_used") or []
