@@ -3,12 +3,12 @@ import logging
 import os
 import tempfile
 import threading
-import uuid
 
 from django.contrib.auth.decorators import login_required
 from django.db import close_old_connections, connections, transaction
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
+from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
 from accounts.models import CPPUser
@@ -49,6 +49,12 @@ def _validate_file_extension(uploaded_file):
     if ext not in ALLOWED_EXTENSIONS:
         return False, ext
     return True, ext
+
+
+def _gcs_destination_from_name(name: str, ext: str) -> str:
+    """Build a stable GCS object name from the form name."""
+    safe = slugify((name or "").strip()) or "untitled"
+    return f"rag_dataset/{safe}{ext}"
 
 
 def _import_to_rag(gcs_uri, db_file):
@@ -102,6 +108,113 @@ def _schedule_rag_import(db_file: DatabaseFile, gcs_uri: str) -> None:
     transaction.on_commit(start_thread)
 
 
+def _display_name_for_rag_file(rag_file) -> str:
+    name = (getattr(rag_file, "display_name", "") or "").strip()
+    if name:
+        return name
+    resource = (getattr(rag_file, "name", "") or "").strip()
+    if resource:
+        return resource.rsplit("/", 1)[-1]
+    return "(unnamed corpus file)"
+
+
+def _delete_from_rag_corpus(rag_resource_name: str) -> bool:
+    """
+    Delete a single resource from the RAG corpus.
+
+    Returns True on success, False when deletion fails.
+    """
+    resource = (rag_resource_name or "").strip()
+    if not resource:
+        return False
+    try:
+        rag_delete_file(resource)
+        return True
+    except Exception:
+        logger.exception("RAG delete failed for %s", resource)
+        return False
+
+
+def _managed_file_rows() -> list[dict]:
+    """
+    Merge DB rows with live RAG corpus files for the manage-db page.
+
+    - If a corpus file exists in DB (matched by rag_resource_name), show DB data.
+    - If a corpus file is missing in DB, create a placeholder row.
+    - DB rows that are not yet in corpus are still shown.
+    """
+    db_rows = list(
+        DatabaseFile.objects.select_related("uploader").all().order_by("-date_added")
+    )
+    by_rag_name = {row.rag_resource_name: row for row in db_rows if row.rag_resource_name}
+
+    merged: list[dict] = []
+    seen_db_ids: set[int] = set()
+
+    try:
+        rag_files = rag_list_files()
+    except Exception:
+        logger.exception("Could not list RAG corpus files for manage-db page")
+        rag_files = []
+
+    for rag_file in rag_files:
+        db_row = by_rag_name.get(rag_file.name)
+        if db_row is not None:
+            seen_db_ids.add(db_row.pk)
+            merged.append(
+                {
+                    "pk": db_row.pk,
+                    "name": db_row.name,
+                    "description": db_row.description,
+                    "source_type": db_row.source_type,
+                    "source_type_display": db_row.get_source_type_display(),
+                    "date_added": db_row.date_added,
+                    "uploader": db_row.uploader,
+                    "file_url": db_row.file.url if db_row.file else "",
+                    "can_delete": True,
+                    "placeholder": False,
+                }
+            )
+            continue
+
+        merged.append(
+            {
+                "pk": None,
+                "name": _display_name_for_rag_file(rag_file),
+                "description": "No description (not in database table).",
+                "source_type": "file",
+                "source_type_display": "RAG Corpus Only",
+                "date_added": None,
+                "uploader": None,
+                "file_url": "",
+                "can_delete": True,
+                "rag_resource_name": rag_file.name,
+                "placeholder": True,
+            }
+        )
+
+    for db_row in db_rows:
+        if db_row.pk in seen_db_ids:
+            continue
+        merged.append(
+            {
+                "pk": db_row.pk,
+                "name": db_row.name,
+                "description": db_row.description,
+                "source_type": db_row.source_type,
+                "source_type_display": db_row.get_source_type_display(),
+                "date_added": db_row.date_added,
+                "uploader": db_row.uploader,
+                "file_url": db_row.file.url if db_row.file else "",
+                "can_delete": True,
+                "rag_resource_name": db_row.rag_resource_name,
+                "placeholder": False,
+            }
+        )
+
+    return merged
+
+
 @login_required
 def database_files(request):
     if not allowed_visitor(request.user):
@@ -150,7 +263,10 @@ def database_files(request):
                                 tmp.write(chunk)
                             tmp_path = tmp.name
 
-                        gcs_uri = gcs_upload_file(tmp_path, destination_name=f"rag_dataset/{uuid.uuid4().hex}{ext}")
+                        gcs_uri = gcs_upload_file(
+                            tmp_path,
+                            destination_name=_gcs_destination_from_name(name, ext),
+                        )
                         db_file.gcs_uri = gcs_uri
                         db_file.save(update_fields=['gcs_uri'])
 
@@ -191,7 +307,7 @@ def database_files(request):
                 db_file.save()
 
                 try:
-                    dest_name = f"rag_dataset/{uuid.uuid4().hex}.txt"
+                    dest_name = _gcs_destination_from_name(name, ".txt")
                     gcs_uri = gcs_upload_from_string(
                         raw_text.encode('utf-8'),
                         dest_name,
@@ -212,7 +328,7 @@ def database_files(request):
 
     template_data = {
         'title': 'Database',
-        'files': DatabaseFile.objects.all().order_by('-date_added'),
+        'files': _managed_file_rows(),
         'error': error,
         'success': success,
     }
@@ -231,10 +347,7 @@ def delete_database_file(request, file_id):
         return redirect('developer.files')
 
     if db_file.rag_resource_name:
-        try:
-            rag_delete_file(db_file.rag_resource_name)
-        except Exception:
-            logger.exception("RAG delete failed for %s", db_file.rag_resource_name)
+        _delete_from_rag_corpus(db_file.rag_resource_name)
 
     if db_file.gcs_uri:
         try:
@@ -251,6 +364,25 @@ def delete_database_file(request, file_id):
             logger.exception("Local file delete failed")
 
     db_file.delete()
+    return redirect('developer.files')
+
+
+@login_required
+@require_POST
+def delete_corpus_only_file(request):
+    """
+    Delete a RAG resource directly (for entries missing from the DB table).
+    """
+    if not allowed_visitor(request.user):
+        return redirect('home.index')
+
+    rag_name = (request.POST.get('rag_resource_name') or "").strip()
+    if not rag_name:
+        return redirect('developer.files')
+
+    _delete_from_rag_corpus(rag_name)
+    # If stale DB pointers exist, clear them after direct corpus delete.
+    DatabaseFile.objects.filter(rag_resource_name=rag_name).update(rag_resource_name="")
     return redirect('developer.files')
 
 

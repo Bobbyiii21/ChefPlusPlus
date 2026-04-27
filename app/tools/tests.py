@@ -158,6 +158,46 @@ class TestDotenvFallback(unittest.TestCase):
 
 
 # ====================================================================
+# prompt_router tests
+# ====================================================================
+
+
+class TestPromptRouter(unittest.TestCase):
+    """Intent suffix + document catalog ordering."""
+
+    def test_general_intent_suffix_empty(self):
+        from tools import prompt_router as pr
+        self.assertEqual(pr.get_prompt_for_intent(pr.GENERAL), "")
+
+    def test_factual_intent_non_empty(self):
+        from tools import prompt_router as pr
+        s = pr.get_prompt_for_intent(pr.FACTUAL)
+        self.assertIn("factual", s.lower())
+        self.assertIn("USDA", s)
+
+    def test_build_suffix_intent_then_catalog(self):
+        from tools.prompt_router import build_chat_system_prompt_suffix
+
+        catalog = "## Documents in the retrieval corpus (from your library)\n\n- A: b"
+        out = build_chat_system_prompt_suffix("How much protein in chicken?", catalog)
+        self.assertTrue(out.startswith("## Response shape (factual)"))
+        self.assertTrue(out.endswith("A: b"))
+        self.assertLess(out.index("(factual)"), out.index("Documents in the retrieval"))
+
+    def test_build_suffix_catalog_only_when_general(self):
+        from tools.prompt_router import build_chat_system_prompt_suffix
+
+        catalog = "## Documents in the retrieval corpus (from your library)\n\n- X: y"
+        out = build_chat_system_prompt_suffix("Hello there", catalog)
+        self.assertEqual(out, catalog)
+
+    def test_build_suffix_empty_when_no_catalog_and_general(self):
+        from tools.prompt_router import build_chat_system_prompt_suffix
+
+        self.assertEqual(build_chat_system_prompt_suffix("Hello", ""), "")
+
+
+# ====================================================================
 # vertex_chat tests
 # ====================================================================
 
@@ -409,6 +449,46 @@ class TestRunChat(unittest.TestCase):
     @mock.patch("tools.vertex_chat.vertexai")
     @mock.patch("tools.vertex_chat.GenerativeModel")
     @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_structured_nutrition_accepts_guidelines_only_source(self, MockModel, mock_vertexai):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = (
+            "Sample day with macros…\n\n"
+            "Source: Dietary Guidelines for Americans, 2020–2025"
+        )
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        result = self._vc.run_chat("Give me a sample meal plan with macros.")
+        self.assertEqual(result["error"], "")
+        self.assertIn("Dietary Guidelines", result["reply"])
+
+    @mock.patch("tools.vertex_chat.vertexai")
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_document_based_reply_accepts_authority_source_when_citing_library(
+        self, MockModel, mock_vertexai
+    ):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = (
+            "My Doc suggests adding more cinnamon.\n\n"
+            "Source: USDA FoodData Central"
+        )
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        result = self._vc.run_chat(
+            "Tell me about my library docs",
+            system_prompt_suffix=(
+                "## Documents in the retrieval corpus (from your library)\n"
+                "- My Doc: summary"
+            ),
+        )
+        self.assertEqual(result["error"], "")
+        self.assertIn("USDA FoodData Central", result["reply"])
+
+    @mock.patch("tools.vertex_chat.vertexai")
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
     def test_casual_question_does_not_require_source(self, MockModel, mock_vertexai):
         mock_response = mock.MagicMock()
         mock_response.candidates = [mock.MagicMock()]
@@ -418,6 +498,62 @@ class TestRunChat(unittest.TestCase):
         result = self._vc.run_chat("Hello")
         self.assertEqual(result["error"], "")
         self.assertIn("Hi!", result["reply"])
+
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch("tools.vertex_chat.time.sleep")
+    def test_rag_vector_quota_retries_with_long_backoff_then_generic(
+        self, mock_sleep, MockModel
+    ):
+        from google.api_core import exceptions as gapic_exc
+
+        msg = (
+            "Failed to process Rag Managed Vertex Vector Search response.; "
+            "QPS or BW/in or BW/out quota exceeded"
+        )
+        err = gapic_exc.GoogleAPIError(msg)
+        MockModel.return_value.generate_content.side_effect = [err] * 5
+
+        result = self._vc.run_chat("Hello")
+        self.assertEqual(result["reply"], "")
+        self.assertIn("temporarily overloaded", result["error"].lower())
+        self.assertIn("try again", result["error"].lower())
+        self.assertNotIn("Harpoon", result["error"])
+        self.assertEqual(mock_sleep.call_count, 4)
+        first_wait = mock_sleep.call_args_list[0][0][0]
+        self.assertGreaterEqual(first_wait, 4.0)
+
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch("tools.vertex_chat.time.sleep")
+    def test_recovers_after_transient_quota_errors(self, mock_sleep, MockModel):
+        from google.api_core import exceptions as gapic_exc
+
+        msg = "Failed to parse Harpoon FetchReply; QPS or BW/in or BW/out quota exceeded"
+        err = gapic_exc.GoogleAPIError(msg)
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = "Recovered."
+        MockModel.return_value.generate_content.side_effect = [err, err, mock_response]
+
+        result = self._vc.run_chat("Hello")
+        self.assertEqual(result["error"], "")
+        self.assertEqual(result["reply"], "Recovered.")
+        self.assertEqual(mock_sleep.call_count, 2)
+
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch("tools.vertex_chat.time.sleep")
+    def test_non_retryable_error_returns_generic_without_sleep(self, mock_sleep, MockModel):
+        from google.api_core import exceptions as gapic_exc
+
+        err = gapic_exc.PermissionDenied("Permission denied")
+        MockModel.return_value.generate_content.side_effect = err
+
+        result = self._vc.run_chat("Hello")
+        self.assertEqual(result["reply"], "")
+        self.assertIn("temporarily overloaded", result["error"].lower())
+        mock_sleep.assert_not_called()
 
 
 # ====================================================================
@@ -553,6 +689,52 @@ class TestRagFilesDelete(unittest.TestCase):
         )
         self._rf.delete_file(file_name)
         mock_rag.delete_file.assert_called_once_with(name=file_name)
+
+
+class TestRagFilesClear(unittest.TestCase):
+    """rag_files.clear_corpus with mocked SDK."""
+
+    _ENV = {
+        "GOOGLE_CLOUD_PROJECT": "test-project",
+        "VERTEX_AI_LOCATION": "us-central1",
+        "VERTEX_RAG_CORPUS": "projects/test-project/locations/us-central1/ragCorpora/123",
+    }
+
+    def setUp(self):
+        import tools.rag_files as rf
+        self._rf = rf
+        rf._vertex_inited = False
+        import tools.env_config as ec
+        ec._dotenv_loaded = False
+
+    @mock.patch("tools.rag_files.vertexai")
+    @mock.patch("tools.rag_files.rag")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_clear_corpus_dry_run_no_deletes(self, mock_rag, mock_vertexai):
+        f1 = mock.MagicMock()
+        f1.display_name = "a.pdf"
+        f1.name = "projects/test-project/locations/us-central1/ragCorpora/123/ragFiles/1"
+        mock_rag.list_files.return_value = [f1]
+
+        out = self._rf.clear_corpus(dry_run=True)
+        self.assertEqual(len(out), 1)
+        mock_rag.delete_file.assert_not_called()
+
+    @mock.patch("tools.rag_files.vertexai")
+    @mock.patch("tools.rag_files.rag")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_clear_corpus_deletes_each_file(self, mock_rag, mock_vertexai):
+        f1 = mock.MagicMock()
+        f1.display_name = "a.pdf"
+        f1.name = "projects/test-project/locations/us-central1/ragCorpora/123/ragFiles/1"
+        f2 = mock.MagicMock()
+        f2.display_name = "b.pdf"
+        f2.name = "projects/test-project/locations/us-central1/ragCorpora/123/ragFiles/2"
+        mock_rag.list_files.return_value = [f1, f2]
+
+        out = self._rf.clear_corpus(dry_run=False)
+        self.assertEqual(len(out), 2)
+        self.assertEqual(mock_rag.delete_file.call_count, 2)
 
 
 class TestRagFilesNoCorpus(unittest.TestCase):

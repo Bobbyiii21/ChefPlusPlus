@@ -69,9 +69,9 @@ You are **not** a doctor or registered dietitian. You do not diagnose conditions
 
 ---
 
-## Knowledge Sources
+## Reference material
 
-You combine **general nutrition knowledge** (below) with **retrieved passages** from the user’s document library when retrieval returns them. If this prompt ends with a section titled **“Documents in the retrieval corpus (from your library)”**, treat that block as the authoritative catalog of what is indexed: each line’s **name** and **summary** tell you what may appear in RAG results—use those names when you cite user content (not raw file paths or chunk numbers).
+You combine **general nutrition knowledge** (below) with **retrieved passages** from the user’s uploads when retrieval returns them. When a section titled **Documents in the retrieval corpus (from your library)** appears **later in this prompt** (before the closing attribution instructions), that block lists what is indexed—each line’s **name** and **summary** describe what may appear in RAG results. Use those display names when you refer to user content, not raw file paths or chunk numbers. Do **not** open your answer by discussing citation format; follow the closing section at the end of this prompt for how to finish with attribution when required.
 
 ### 1. Dietary Guidelines for Americans, 2020–2025 (USDA & HHS)
 This is the official U.S. science-based guidance on healthy eating. Your advice should be grounded in its core principles: building a healthy dietary pattern with nutrient-dense foods, customizing choices to personal needs, and limiting items high in added sugars, saturated fat, and sodium. You should also be aware of its life-stage-specific recommendations and its recognition of various healthy eating patterns (e.g., U.S.-Style, Vegetarian, Mediterranean-Style). Use this source to explain *why* certain foods or habits are recommended.
@@ -89,20 +89,7 @@ Use this source to answer questions like: "How much protein is in chicken?" or "
 
 ### 3. User library (RAG corpus)
 
-Retrieval may surface recipes, notes, or other uploads from the corpus. Prefer the **display names and summaries** from the appended catalog when they are present; when citing that material, refer to documents by those names, not internal filenames or chunk indices.
-
-## Citation Requirements for Document-Based Answers
-
-- When the prompt includes a document catalog section (``## Documents in the retrieval corpus (from your library)``), treat the response as document-based.
-- For document-based responses, end with a natural source line in this format:
-  ``Source: <document name>`` or ``Source: <doc 1>, <doc 2>``.
-- If document support is missing or uncertain, say so clearly instead of guessing.
-
-## Source lines for U.S. nutrition guidance
-
-When you give **estimated macros**, **calories per meal**, or a **sample meal plan** from general knowledge (not only the user’s uploads), close the answer with a **Source:** line that names the references, for example:
-``Source: Dietary Guidelines for Americans, 2020–2025; USDA FoodData Central``
-If user-library content meaningfully shaped the answer, **append** those document display names (from the catalog, when present) to the same line after a comma or semicolon.
+Retrieval may surface recipes, notes, or other uploads. Prefer the **display names and summaries** from the document list when it appears later in this prompt.
 
 ## How to Respond to User Goals
 
@@ -119,7 +106,7 @@ When a user shares a personal goal, tailor your advice accordingly. Common goals
 
 ### Meal plans and macro breakdowns
 
-When you sketch a sample day of eating, a meal plan, or the user asks for macros, go beyond calories alone: for **each meal/snack** and for the **daily total**, include **protein (g), carbohydrate (g), and fat (g)** at minimum (add **fiber (g)** when it helps). Use a small summary table or clearly labeled lines so the macros are easy to scan. Treat all numbers as **rounded estimates** for illustration unless you are citing a specific database-backed food line; remind the reader that needs vary by person, activity, and health status. Always finish with the **Source:** line described above so readers know which references the numbers draw from.
+When you sketch a sample day of eating, a meal plan, or the user asks for macros, go beyond calories alone: for **each meal/snack** and for the **daily total**, include **protein (g), carbohydrate (g), and fat (g)** at minimum (add **fiber (g)** when it helps). Use a small summary table or clearly labeled lines so the macros are easy to scan. Treat all numbers as **rounded estimates** for illustration unless you are citing a specific database-backed food line; remind the reader that needs vary by person, activity, and health status. End-of-answer attribution for these cases is described in the **closing section at the end of this prompt** (after any document list).
 
 ---
 
@@ -172,6 +159,23 @@ Keep the tone light and open. Let the user lead.
 > **Assistant:** I can't pull up the exact nutritional information for a specific brand-name product like the 'Mega-Crunch Energy Bar,' as my knowledge is based on general food data from sources like the USDA. The nutrition can vary a lot between different brands.
 
 > However, I can give you some general tips for choosing energy bars! It's a good idea to check the label on the package for added sugars and saturated fat. Look for bars that have fiber and protein from whole-food ingredients like nuts, seeds, or oats to help keep you feeling full and energized.
+""".strip()
+
+# Shown **after** the dynamic suffix (intent + document catalog) so the model sees
+# available library names before ``Source:`` / attribution rules.
+_SYSTEM_SOURCE_AND_CITATION_APPENDIX = """
+---
+
+## Closing attribution (after any document list above)
+
+Answer the user’s question in natural language first. Do **not** preface the reply by explaining citation rules or ``Source:`` lines.
+
+**Indexed library:** When **## Documents in the retrieval corpus (from your library)** appears earlier in this prompt, treat answers grounded in that material as document-based. End with one closing line:
+``Source: <document name>`` or ``Source: <doc 1>, <doc 2>`` using the **display names** from that list—not file paths, chunk numbers, or bracketed numbers like ``[1]``. If library support is missing or uncertain, say so instead of guessing.
+
+**U.S. nutrition guidance numbers:** When you give **estimated macros**, **calories per meal**, or a **sample meal plan** from general knowledge, end with:
+``Source: Dietary Guidelines for Americans, 2020–2025; USDA FoodData Central``
+If user-library content from the list meaningfully shaped the answer, **append** those display names to the same line after a comma or semicolon.
 """.strip()
 
 # ── Prompt storage and model cache (thread-safe) ──────────────────
@@ -260,10 +264,9 @@ def _build_model(prompt: str) -> GenerativeModel:
 
 
 def _effective_system_instruction(base: str, suffix: str) -> str:
-    extra = (suffix or "").strip()
-    if not extra:
-        return base.strip()
-    return f"{base.strip()}\n\n{extra}"
+    """Base persona, then optional intent + document catalog, then attribution rules."""
+    parts = [base.strip(), (suffix or "").strip(), _SYSTEM_SOURCE_AND_CITATION_APPENDIX]
+    return "\n\n".join(p for p in parts if p)
 
 
 def _get_model(effective_system_instruction: str) -> GenerativeModel:
@@ -297,8 +300,15 @@ def _build_contents(
     return contents
 
 
-_MAX_RETRIES = 3
-_RETRY_BACKOFF = (1.0, 3.0, 6.0)
+# First attempt + _MAX_RETRIES retries = _MAX_RETRIES + 1 total calls.
+_MAX_RETRIES = 4
+_RETRY_BACKOFF_DEFAULT = (1.0, 4.0, 10.0, 20.0)
+# Longer waits when Vertex RAG / managed vector search is throttling (QPS / BW quota).
+_RETRY_BACKOFF_VECTOR_QUOTA = (4.0, 12.0, 30.0, 60.0)
+
+_GENERIC_AI_UNAVAILABLE = (
+    "The AI service is temporarily overloaded. Please wait a moment and try again."
+)
 _SOURCE_LINE_PATTERN = re.compile(r"(?im)^\s*source:\s*(?P<sources>.+?)\s*$")
 _NUMBERED_CITATION_PATTERN = re.compile(r"\[\s*\d+(?:\s*,\s*\d+)*\s*\]")
 _DOC_CATALOG_MARKER = "## Documents in the retrieval corpus (from your library)"
@@ -339,12 +349,46 @@ _RETRYABLE_CODES = (
 )
 
 
-def _is_retryable(exc: google_exceptions.GoogleAPIError) -> bool:
-    code = getattr(exc, "code", None) or getattr(exc, "grpc_status_code", None)
+def _rag_vector_quota_hint(text: str) -> bool:
+    """True when error text matches RAG / managed vector search throttling."""
+    m = (text or "").lower()
+    markers = (
+        "quota exceeded",
+        "qps or bw",
+        "vector search",
+        "vectorsearch.googleapis.com",
+        "harpoon",
+        "rag managed",
+        "managed vertex vector",
+        "url_rejected",
+        "fetchreply",
+        "resource exhausted",
+    )
+    return any(s in m for s in markers)
+
+
+def _backoff_seconds(attempt_index: int, exc: BaseException) -> float:
+    """Sleep duration before retry *attempt_index* (0-based after a failure)."""
+    seq = (
+        _RETRY_BACKOFF_VECTOR_QUOTA
+        if _rag_vector_quota_hint(str(exc))
+        else _RETRY_BACKOFF_DEFAULT
+    )
+    if attempt_index < len(seq):
+        return seq[attempt_index]
+    return seq[-1]
+
+
+def _is_retryable(exc: BaseException) -> bool:
     msg = str(exc).lower()
-    if code in _RETRYABLE_CODES:
+    if _rag_vector_quota_hint(msg):
         return True
-    return "quota" in msg or "rate" in msg
+    if isinstance(exc, google_exceptions.GoogleAPIError):
+        code = getattr(exc, "code", None) or getattr(exc, "grpc_status_code", None)
+        if code in _RETRYABLE_CODES:
+            return True
+        return "quota" in msg or "rate" in msg
+    return False
 
 
 def _requires_document_citation(system_prompt_suffix: str) -> bool:
@@ -376,16 +420,26 @@ def _user_requests_structured_nutrition(message: str) -> bool:
     return bool(_STRUCTURED_NUTRITION_QUERY_PATTERN.search((message or "").strip()))
 
 
-def _authority_sources_in_tail(tail: str) -> bool:
-    if not tail:
+def _authority_source_fragment_ok(fragment: str) -> bool:
+    """True when a ``Source:`` fragment names USDA guidance or FoodData."""
+    ch = (fragment or "").strip().casefold()
+    if len(ch) < 4:
         return False
     guides = (
-        "dietary guideline" in tail
-        or "guidelines for americans" in tail
-        or ("guideline" in tail and "american" in tail)
+        "dietary guideline" in ch
+        or "guidelines for americans" in ch
+        or ("guideline" in ch and "american" in ch)
     )
-    data = "usda" in tail or "fooddata" in tail
-    return guides and data
+    data = "usda" in ch or "fooddata" in ch
+    return guides or data
+
+
+def _authority_sources_in_tail(tail: str) -> bool:
+    """Structured-nutrition answers: accept either guidelines or USDA/FoodData in the tail."""
+    ch = (tail or "").strip().casefold()
+    if len(ch) < 8:
+        return False
+    return _authority_source_fragment_ok(ch)
 
 
 def _structured_nutrition_sources_ok(
@@ -400,6 +454,13 @@ def _structured_nutrition_sources_ok(
         for c in chunks:
             if c in known:
                 return True
+            if _authority_source_fragment_ok(c):
+                return True
+            for doc in known:
+                if len(doc) >= 4 and doc in c:
+                    return True
+                if len(c) >= 5 and c in doc:
+                    return True
     return _authority_sources_in_tail(tail)
 
 
@@ -425,13 +486,29 @@ def _reply_references_known_document(reply_text: str, system_prompt_suffix: str)
 
 
 def _has_valid_source_line(reply_text: str, system_prompt_suffix: str) -> bool:
+    """
+    True when the final ``Source:`` line credibly cites the library or authorities.
+
+    Accepts exact catalog-name matches, partial overlaps between catalog titles
+    and ``Source:`` fragments, or USDA / Dietary Guidelines style references.
+    """
     source_names = _extract_source_names(reply_text)
     if not source_names:
         return False
     known_docs = set(_document_names_from_suffix(system_prompt_suffix))
     if not known_docs:
         return False
-    return any(name in known_docs for name in source_names)
+    for name in source_names:
+        if name in known_docs:
+            return True
+        if _authority_source_fragment_ok(name):
+            return True
+        for doc in known_docs:
+            if len(doc) >= 4 and doc in name:
+                return True
+            if len(name) >= 5 and name in doc:
+                return True
+    return False
 
 
 def run_chat(
@@ -447,7 +524,10 @@ def run_chat(
     system prompt (after a blank line) for this call only — useful for
     listing user-uploaded documents the RAG corpus may retrieve.
 
-    Retries up to 3 times on transient quota / rate-limit errors.
+    Retries on transient quota / rate-limit / RAG vector-search throttling with
+    escalating backoff. Full errors are logged server-side; clients receive a
+    short generic message asking them to retry.
+
     Returns ``{"reply": str, "error": str}``.
     """
     text = (message or "").strip()
@@ -463,14 +543,14 @@ def run_chat(
         return {"reply": "", "error": str(exc)}
     contents = _build_contents(history, text)
 
-    last_exc: Exception | None = None
+    response: Any = None
     for attempt in range(_MAX_RETRIES + 1):
         try:
             response = model.generate_content(contents)
             break
         except (ValueError, RuntimeError) as exc:
-            logger.exception("Configuration error")
-            return {"reply": "", "error": str(exc)}
+            logger.exception("Vertex client configuration error")
+            return {"reply": "", "error": _GENERIC_AI_UNAVAILABLE}
         except google_auth_exceptions.DefaultCredentialsError:
             logger.warning("Application Default Credentials not found")
             return {
@@ -480,23 +560,30 @@ def run_chat(
                     "Run: gcloud auth application-default login"
                 ),
             }
-        except google_exceptions.GoogleAPIError as exc:
-            last_exc = exc
+        except Exception as exc:
             if attempt < _MAX_RETRIES and _is_retryable(exc):
-                wait = _RETRY_BACKOFF[attempt]
+                wait = _backoff_seconds(attempt, exc)
+                detail = str(exc).replace("\n", " ")
+                if len(detail) > 280:
+                    detail = detail[:280] + "…"
                 logger.warning(
-                    "Retryable Vertex AI error (attempt %d/%d), "
-                    "retrying in %.1fs: %s",
-                    attempt + 1, _MAX_RETRIES, wait, exc,
+                    "Retryable Vertex AI error (attempt %d/%d), retrying in %.1fs: %s",
+                    attempt + 1,
+                    _MAX_RETRIES + 1,
+                    wait,
+                    detail,
                 )
                 time.sleep(wait)
                 continue
-            logger.exception("Vertex AI API error")
-            detail = getattr(exc, "message", None) or str(exc)
-            return {"reply": "", "error": f"AI service error: {detail}"}
-    else:
-        detail = getattr(last_exc, "message", None) or str(last_exc)
-        return {"reply": "", "error": f"AI service error (after retries): {detail}"}
+            logger.error(
+                "Vertex AI generate_content failed (final or non-retryable).",
+                exc_info=True,
+            )
+            return {"reply": "", "error": _GENERIC_AI_UNAVAILABLE}
+
+    if response is None:
+        logger.error("Vertex AI: generate_content returned no response object.")
+        return {"reply": "", "error": _GENERIC_AI_UNAVAILABLE}
 
     if not response.candidates:
         return {

@@ -1,12 +1,22 @@
 """
-Runtime intent classifier and per-intent system prompt selector.
+Runtime intent classifier and per-intent **system-prompt suffix** fragments.
+
+These strings are meant to be appended (after the main system instruction from
+``vertex_chat``) together with the document catalog. The catalog block should
+stay **last within that suffix** (after any intent fragment) so
+``run_chat``’s citation checks still see ``## Documents in the retrieval corpus…``
+in the suffix. The full Vertex system instruction appends a short closing
+attribution section after the suffix.
 
 Public API
 ----------
-- ``classify_intent(message)``       — returns one of: factual, explain,
-                                        creative, goal, general
-- ``get_prompt_for_intent(intent)``  — returns the matching system prompt
-- ``INTENT_PROMPTS``                 — dict mapping intent → prompt string
+- ``classify_intent(message)`` — returns one of: factual, explain,
+  creative, goal, general
+- ``get_prompt_for_intent(intent)`` — short intent-specific guidance (empty for
+  ``general``)
+- ``build_chat_system_prompt_suffix(message, document_catalog)`` — intent
+  appendix + source/catalog appendix, in the correct order
+- ``INTENT_PROMPTS`` — dict mapping intent → suffix string
 """
 
 from __future__ import annotations
@@ -95,117 +105,54 @@ def classify_intent(message: str) -> str:
     return GENERAL
 
 
-# ── Shared base persona ───────────────────────────────────────────────
-
-_BASE = """
-## Role and Purpose
-
-You are a friendly, knowledgeable dietary health assistant. Your job is to help users make strong, informed choices about their nutrition. Speak in plain, warm, encouraging language.
-
-You are **not** a doctor or registered dietitian. You do not diagnose conditions, treat diseases, or replace professional medical advice. When a user has a specific health condition or complex medical need, always encourage them to consult a qualified healthcare provider.
-
-## Knowledge Sources
-
-Your recommendations draw from:
-1. **Dietary Guidelines for Americans, 2020–2025** (USDA & HHS) — core healthy-eating principles.
-2. **USDA FoodData Central** — nutritional profiles per 100 g serving (macronutrients, vitamins, minerals).
-3. **User Imported Recipes and Food Data** — documents in the RAG corpus; always reference these by name, not by file name or number.
-
-## What You Must Not Do
-
-- Do not diagnose, treat, or provide clinical guidance for specific medical conditions.
-- Do not prescribe exact calorie or macronutrient targets without noting that individual needs vary.
-- Do not recommend supplements as a food substitute without advising the user to consult a healthcare provider.
-- Do not claim any food cures or prevents disease.
-- Do not shame or judge any food culture, dietary choice, or eating habit.
-
-## Handling Uncertainty
-
-If a food is not in the USDA dataset, say so and offer the closest relevant comparison. If a question is outside your knowledge, suggest consulting a registered dietitian or doctor.
-""".strip()
-
-# ── Per-intent prompts ────────────────────────────────────────────────
+# ── Per-intent suffixes (append after main system prompt, before doc catalog) ─
 
 INTENT_PROMPTS: dict[str, str] = {
-    FACTUAL: f"""## Response Format
-Lead with the specific number or fact. Cite the USDA FoodData Central or Dietary Guidelines source inline. Keep the answer concise — one to three sentences — unless the user asks for more detail.
+    FACTUAL: """
+## Response shape (factual)
 
-{_BASE}""",
-
-    EXPLAIN: f"""## Response Format
-Structure your answer as: what it is → why it matters → how it practically helps the user. Prefer analogies over jargon. End with one concrete, actionable takeaway.
-
-{_BASE}""",
-
-    CREATIVE: f"""## Response Format
-Offer 2–3 distinct, practical options formatted as a short list. Be enthusiastic and concrete. Briefly note why each option is a nutritionally sound choice.
-
-{_BASE}""",
-
-    GOAL: f"""## Response Format
-Acknowledge the user's goal warmly first. Give 3 prioritized, actionable steps tailored to that goal. Close by noting that individual needs vary and a registered dietitian can help create a personalised plan.
-
-{_BASE}""",
-
-    GENERAL: """
-# System Prompt: Dietary Health Assistant
-
-## Role and Purpose
-
-You are a friendly, knowledgeable dietary health assistant. Your job is to help users make strong, informed choices about their nutrition in pursuit of their personal health goals. You are designed to be welcoming and easy to use. Speak in plain, warm, encouraging language. Avoid jargon unless you explain it simply.
-
-You are **not** a doctor or registered dietitian. You do not diagnose conditions, treat diseases, or replace professional medical advice. When a user has a specific health condition or complex medical need, always encourage them to consult a qualified healthcare provider.
-
-## Tone and Style
-
-- Be warm, patient, and encouraging — never judgmental about food choices.
-- Use simple, everyday language. Short sentences are better than long ones.
-- When someone seems overwhelmed, reassure them that small changes add up.
-- If a user mentions a medical condition (e.g., diabetes, heart disease, kidney disease), acknowledge it respectfully and remind them to consult their doctor before making major dietary changes.
-- Avoid overwhelming users with too much information at once. Prioritize the most actionable advice.
-
-## Knowledge Sources
-
-1. **Dietary Guidelines for Americans, 2020–2025** (USDA & HHS) — official U.S. science-based guidance on healthy eating.
-2. **USDA FoodData Central** — comprehensive food composition data. Nutritional values are typically based on a 100 g portion.
-3. **User Imported Recipes and Food Data** — documents in the RAG corpus; always reference these by name, not by file name or number.
-
-## How to Respond to User Goals
-
-When a user shares a personal goal, tailor your advice accordingly. Common goals include:
-
-- **Weight management** — calorie balance, nutrient density, satiety (fiber, protein), reducing added sugars.
-- **Heart health** — reduce saturated fat, sodium, and added sugars; increase fiber, omega-3s, fruits, vegetables, whole grains.
-- **Building muscle / athletic performance** — adequate protein, calorie sufficiency, meal timing, iron and magnesium.
-- **Managing blood sugar** — fiber-rich carbohydrates, limiting added sugars, pairing carbs with protein and healthy fats.
-- **Gut health** — dietary fiber, fermented foods, variety in plant foods.
-- **Eating on a budget** — beans, lentils, eggs, canned fish, oats, frozen vegetables, seasonal produce.
-- **Vegetarian or vegan diets** — plant-based sources of protein, iron, calcium, B12, zinc, and omega-3s.
-- **Older adults** — increased needs for protein, vitamin B12, calcium, and vitamin D; hydration.
-
-## What You Must Not Do
-
-- Do not diagnose, treat, or provide clinical guidance for specific medical conditions.
-- Do not prescribe exact calorie or macronutrient targets without noting individual needs vary.
-- Do not recommend supplements as a food substitute without advising the user to consult a healthcare provider.
-- Do not claim any food cures or prevents disease.
-- Do not shame or judge any food culture, dietary choice, or eating habit.
-
-## Handling Uncertainty
-
-If a specific food is not in the Foundation Foods dataset, say so honestly and offer the closest relevant comparison. If a question is outside your knowledge, suggest consulting a registered dietitian or doctor.
-
-## Starting the Conversation
-
-When a user first arrives, greet them warmly and ask what they're hoping to work on:
-
-> "Hi there! I'm here to help you make sense of nutrition and find food choices that work for your life. To get started — what's your main goal right now?"
-
-Keep the tone light and open. Let the user lead.
+Lead with the specific number or fact. Cite the USDA FoodData Central or Dietary
+Guidelines source inline. Keep the answer concise — one to three sentences —
+unless the user asks for more detail.
 """.strip(),
+    EXPLAIN: """
+## Response shape (explain)
+
+Structure your answer as: what it is → why it matters → how it practically helps
+the user. Prefer analogies over jargon. End with one concrete, actionable takeaway.
+""".strip(),
+    CREATIVE: """
+## Response shape (creative)
+
+Offer 2–3 distinct, practical options formatted as a short list. Be enthusiastic and
+concrete. Briefly note why each option is a nutritionally sound choice.
+""".strip(),
+    GOAL: """
+## Response shape (goal)
+
+Acknowledge the user's goal warmly first. Give 3 prioritized, actionable steps
+tailored to that goal. Close by noting that individual needs vary and a registered
+dietitian can help create a personalised plan.
+""".strip(),
+    # Main persona, tone, sources, citations, and goals live in ``vertex_chat`` default.
+    GENERAL: "",
 }
 
 
 def get_prompt_for_intent(intent: str) -> str:
-    """Return the system prompt for *intent*, falling back to general."""
+    """Return intent-specific guidance to append, or empty string for *general*."""
     return INTENT_PROMPTS.get(intent, INTENT_PROMPTS[GENERAL])
+
+
+def build_chat_system_prompt_suffix(message: str, document_catalog: str) -> str:
+    """
+    Combine the **intent appendix** and **source appendix** (document catalog).
+
+    When both are non-empty, the intent fragment comes first and the catalog
+    stays last so the full system instruction still ends with the corpus block
+    (required by the default prompt and by citation validation).
+    """
+    intent_part = get_prompt_for_intent(classify_intent(message))
+    catalog = (document_catalog or "").strip()
+    parts = [p for p in (intent_part.strip(), catalog) if p]
+    return "\n\n".join(parts)

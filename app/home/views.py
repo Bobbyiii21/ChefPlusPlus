@@ -110,18 +110,20 @@ def chat_api(request):
 
     history = body.get("history")
 
+    from tools.prompt_router import build_chat_system_prompt_suffix, classify_intent
     from tools.vertex_chat import run_chat
 
     doc_index = _rag_documents_system_prompt_suffix()
     result = run_chat(
         message,
         history,
-        system_prompt_suffix=doc_index,
+        system_prompt_suffix=build_chat_system_prompt_suffix(message, doc_index),
     )
 
     status = 200 if not result.get("error") else 502
     payload = dict(result)
     if not result.get("error"):
+        payload["intent"] = classify_intent(message)
         payload["reference_downloads"] = reference_downloads_for_reply(
             request, result.get("reply") or ""
         )
