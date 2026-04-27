@@ -52,7 +52,6 @@ function isRecipeContent(content) {
       keywordCount++;
     }
   }
-  console.log(keywordCount);
   
   // Consider it a recipe if we find at least 2 recipe keywords
   // This helps avoid false positives for general cooking questions
@@ -65,8 +64,7 @@ function isRecipeContent(content) {
   const hasNumberedList = /^\s*\d+\./m.test(content);
   const hasBulletList = /^[\s*\-•]/m.test(content);
   
-  console.log(hasNumberedList);
-  console.log(hasBulletList);
+
   // If there's a structured list AND recipe keywords, it's likely a recipe
   if ((hasNumberedList || hasBulletList) && keywordCount >= 2) {
     return true;
@@ -110,7 +108,7 @@ function appendMessage(role, content, isTyping = false) {
     const saveBtn = document.createElement('button');
     saveBtn.className = 'save-recipe-btn';
     saveBtn.textContent = 'Save as Recipe';
-    saveBtn.onclick = () => openSaveRecipeModal(formattedContent);
+    saveBtn.onclick = () => openSaveRecipeModal(content);
     
     actions.appendChild(saveBtn);
     msg.appendChild(actions);
@@ -124,11 +122,14 @@ function appendMessage(role, content, isTyping = false) {
 function openSaveRecipeModal(recipeContent) {
   const modal = document.getElementById('saveRecipeModal');
   const titleInput = document.getElementById('recipeTitle');
-  const contentInput = document.getElementById('recipeContent');
+  const contentPreview = document.getElementById('recipeContentPreview');
   const saveBtn = document.getElementById('confirmSaveRecipe');
   
   titleInput.value = '';
-  contentInput.value = recipeContent;
+  
+  // Parse and display markdown content
+  const formattedContent = marked.parse(recipeContent);
+  contentPreview.innerHTML = formattedContent;
   
   saveBtn.onclick = () => saveRecipe(recipeContent);
   modal.style.display = 'block';

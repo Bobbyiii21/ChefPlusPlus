@@ -24,7 +24,6 @@
               {% endif %}
               <div class="card-body d-flex flex-column">
                 <h5 class="card-title recipe-title">{{ recipe.title }}</h5>
-                <p class="card-text recipe-content">{{ recipe.content|truncatewords:30 }}</p>
                 <div class="mt-auto">
                   <small class="text-muted d-block mb-2">
                     <span class="material-symbols-outlined" style="font-size: 0.9rem; vertical-align: middle;">schedule</span>
@@ -123,5 +122,7 @@
     font-size: 0.875rem;
   }
 </style>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
 {% endblock content %}

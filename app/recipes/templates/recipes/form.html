@@ -32,8 +32,8 @@
               </div>
 
               <div class="form-group mb-3">
-                <label for="{{ form.content.id_for_label }}" class="form-label">Instructions</label>
-                {{ form.content }}
+                <label for="id_content" class="form-label">Instructions</label>
+                <textarea id="id_content" name="content" class="form-control">{{ recipe.content|safe }}</textarea>
                 {% if form.content.errors %}
                   <div class="invalid-feedback d-block">
                     {{ form.content.errors }}

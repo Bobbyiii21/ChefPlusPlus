@@ -35,10 +35,7 @@
 
             <div class="recipe-content-wrapper">
               <h5 class="section-subheader">Instructions</h5>
-              <div id="real-recipe-content" style="display:none;">
-                {{ recipe.content|linebreaks }}
-              </div>
-              <div id="formatted-recipe-content"></div>
+              <div id="formatted-recipe-content" class="recipe-markdown-content"></div>
             </div>
 
             <div class="recipe-actions mt-4">
@@ -66,118 +63,21 @@
   </div>
 </div>
 
-<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
-    marked.setOptions({
-      breaks: true,
-      gfm: true,
-    });
-    //debugger;
-    const content = document.getElementById("real-recipe-content").innerHTML;
-    //console.log(content);
-    //document.getElementById("formatted-recipe-content").innerHTML = marked.parse(content);
-    //debugger;
-    const parser = new DOMParser();
-    doc = parser.parseFromString(content, 'text/html');
-    document.getElementById("formatted-recipe-content").appendChild(doc.body.firstChild);
+  marked.setOptions({
+    breaks: true,
+    gfm: true,
+  });
 
+  // Raw recipe content from Django
+  const rawContent = `{{ recipe.content|escapejs }}`;
+  
+  // Parse markdown and display
+  const formattedContent = marked.parse(rawContent);
+  document.getElementById("formatted-recipe-content").innerHTML = formattedContent;
 </script>
 
-<style>
-  .recipe-detail-card {
-    border: 1px solid var(--border);
-    background-color: var(--surface);
-    box-shadow: 0 0 8px rgba(0, 0, 0, 0.1);
-  }
-
-  .recipe-detail-image {
-    max-height: 400px;
-    object-fit: cover;
-  }
-
-  .recipe-detail-placeholder {
-    height: 300px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--border);
-    color: var(--text-muted);
-  }
-
-  .recipe-detail-placeholder .material-symbols-outlined {
-    font-size: 4rem;
-  }
-
-  .recipe-detail-title {
-    color: var(--text);
-    font-weight: 600;
-    margin-bottom: 1rem;
-    font-size: 2rem;
-  }
-
-  .section-subheader {
-    color: var(--primary);
-    font-weight: 500;
-    margin-top: 1.5rem;
-    margin-bottom: 1rem;
-    border-bottom: 2px solid var(--border);
-    padding-bottom: 0.5rem;
-  }
-
-  .recipe-instructions {
-    color: var(--text);
-    line-height: 1.8;
-    font-size: 1rem;
-    white-space: pre-wrap;
-  }
-
-  .recipe-meta {
-    padding: 0.75rem;
-    background-color: var(--background);
-    border-radius: 4px;
-  }
-
-  .recipe-actions {
-    display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
-
-  .recipe-actions a,
-  .recipe-actions button {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .btn-link {
-    color: var(--primary);
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .btn-link:hover {
-    color: var(--secondary);
-  }
-
-  @media (max-width: 768px) {
-    .recipe-detail-title {
-      font-size: 1.5rem;
-    }
-
-    .recipe-actions {
-      flex-direction: column;
-    }
-
-    .recipe-actions a,
-    .recipe-actions button {
-      width: 100%;
-      justify-content: center;
-    }
-  }
-</style>
+<style src="{% static 'css/recipe.css'}"></style>
 
 {% endblock content %}
