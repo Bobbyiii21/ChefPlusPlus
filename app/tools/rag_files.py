@@ -2,8 +2,9 @@
 Manage files in a Vertex AI RAG corpus (vector store).
 
 Provides simple helpers that front-end developers can call to **list**,
-**import** (add), and **delete** files without touching the Vertex SDK
-directly.
+**import** (add), **delete**, and **clear** (remove all) files without touching
+the Vertex SDK directly. For a CLI that wipes the corpus, see
+``python -m tools.clean_rag_corpus``.
 
 All environment access goes through :mod:`tools.env_config`.
 
@@ -140,6 +141,24 @@ def import_files(
     count = getattr(response, "imported_rag_files_count", 0)
     logger.info("Imported %s file(s) into corpus %s", count, corpus)
     return ImportResult(imported_count=count, raw_response=response)
+
+
+def clear_corpus(*, dry_run: bool = False) -> list[RagFileInfo]:
+    """
+    Delete every RAG file in the configured corpus.
+
+    When *dry_run* is True, list files that would be removed but do not call
+    the delete API.
+
+    Returns the list of :class:`RagFileInfo` that were deleted (or that would
+    be deleted in a dry run), in listing order.
+    """
+    files = list_files()
+    if dry_run:
+        return files
+    for f in files:
+        delete_file(f.name)
+    return files
 
 
 def delete_file(file_name: str) -> None:

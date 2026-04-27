@@ -43,16 +43,17 @@
         <div class="collapse" id="file-{{ forloop.counter }}">
           <div class="card-body" id="files">
             <p><strong>Description:</strong> <br>
-              {{ file.description|default:"—" }}</p>
-            <p><strong>Type:</strong> {{ file.get_source_type_display }}</p>
+              {{ file.description|default:"No description." }}</p>
+            <p><strong>Type:</strong> {{ file.source_type_display }}</p>
             <p><strong>Upload Info:</strong> <br>
-               {{ file.date_added }} by {{ file.uploader }}</p>
-            {% if file.file %}
-            <a href="{{ file.file.url }}" download class="btn-site d-inline-flex align-items-center gap-1 mt-1">
+               {% if file.date_added %}{{ file.date_added }} by {{ file.uploader|default:"Unknown" }}{% else %}Not available (corpus-only record){% endif %}</p>
+            {% if file.file_url %}
+            <a href="{{ file.file_url }}" download class="btn-site d-inline-flex align-items-center gap-1 mt-1">
               <span class="material-symbols-outlined" style="font-size:1rem;">download</span>
               Download
             </a>
             {% endif %}
+            {% if file.can_delete and not file.placeholder %}
             <form method="POST" action="{% url 'developer.files.delete' file.pk %}" class="d-inline-block ms-2 mt-1"
                   onsubmit="return confirm('Delete \x22{{ file.name|escapejs }}\x22? This will also remove it from the RAG model.');">
               {% csrf_token %}
@@ -61,6 +62,19 @@
                 Delete
               </button>
             </form>
+            {% elif file.can_delete and file.placeholder %}
+            <form method="POST" action="{% url 'developer.files.delete_corpus' %}" class="d-inline-block ms-2 mt-1"
+                  onsubmit="return confirm('Delete corpus entry \x22{{ file.name|escapejs }}\x22?');">
+              {% csrf_token %}
+              <input type="hidden" name="rag_resource_name" value="{{ file.rag_resource_name }}">
+              <button type="submit" class="btn-delete d-inline-flex align-items-center gap-1">
+                <span class="material-symbols-outlined" style="font-size:1rem;">delete</span>
+                Delete
+              </button>
+            </form>
+            {% else %}
+            <p class="text-muted mt-2 mb-0"><em>This source exists in the RAG corpus but is missing from the database table.</em></p>
+            {% endif %}
           </div>
         </div>
       </div>

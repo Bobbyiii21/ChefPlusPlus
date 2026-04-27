@@ -34,6 +34,7 @@ function fillSuggestion(el) {
 function appendMessage(role, content, options = {}) {
   const isTyping = Boolean(options.isTyping);
   const referenceDownloads = options.referenceDownloads || null;
+  const intent = options.intent || null;
 
   if (emptyState) emptyState.style.display = 'none';
 
@@ -42,7 +43,17 @@ function appendMessage(role, content, options = {}) {
 
   const label = document.createElement('div');
   label.className = 'message-label';
-  label.textContent = role === 'user' ? 'you' : 'chef++';
+  if (role === 'user') {
+    label.textContent = 'you';
+  } else {
+    label.textContent = 'chef++';
+    if (!isTyping && intent) {
+      const badge = document.createElement('span');
+      badge.className = 'intent-badge';
+      badge.textContent = intent;
+      label.appendChild(badge);
+    }
+  }
 
   const bubble = document.createElement('div');
   bubble.className = 'message-bubble' + (isTyping ? ' thinking' : '');
@@ -126,6 +137,7 @@ async function sendMessage() {
     } else {
       appendMessage('assistant', data.reply, {
         referenceDownloads: data.reference_downloads || [],
+        intent: data.intent || null,
       });
       conversationHistory.push({ role: 'user', content: text });
       conversationHistory.push({ role: 'model', content: data.reply });
