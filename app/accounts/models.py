@@ -86,4 +86,3 @@ class CPPUser(AbstractUser, PermissionsMixin):
     
     def __str__(self):
         return self.slugify_name()
-

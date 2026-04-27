@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% block content %}
+{% load static %}
+
+<div class="p-3 mt-4">
+  <div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <a href="{% url 'recipes.index' %}" class="btn-link">
+        <span class="material-symbols-outlined" style="vertical-align: middle;">arrow_back</span>
+        Back to Recipes
+      </a>
+    </div>
+    <hr>
+
+    <div class="row">
+      <div class="col-lg-8 mx-auto">
+        <div class="card recipe-detail-card">
+          {% if recipe.image %}
+            <img src="{{ recipe.image.url }}" class="card-img-top recipe-detail-image" alt="{{ recipe.title }}">
+          {% else %}
+            <div class="recipe-detail-placeholder">
+              <span class="material-symbols-outlined">restaurant</span>
+            </div>
+          {% endif %}
+
+          <div class="card-body">
+            <h1 class="recipe-detail-title">{{ recipe.title }}</h1>
+            
+            <div class="recipe-meta mb-3">
+              <small class="text-muted">
+                <span class="material-symbols-outlined" style="font-size: 0.9rem; vertical-align: middle;">schedule</span>
+                Saved on {{ recipe.created_at|date:"F d, Y \a\t g:i A" }}
+              </small>
+            </div>
+
+            <div class="recipe-content-wrapper">
+              <h5 class="section-subheader">Instructions</h5>
+              <div id="formatted-recipe-content" class="recipe-markdown-content"></div>
+            </div>
+
+            <div class="recipe-actions mt-4">
+              <a href="{% url 'recipes.index' %}" class="btn-site">
+                <span class="material-symbols-outlined" style="font-size: 0.9rem; vertical-align: middle;">arrow_back</span>
+                Back to Recipes
+              </a>
+              <a href="{% url 'recipes.edit' recipe.id %}" class="btn-site">
+                <span class="material-symbols-outlined" style="font-size: 0.9rem; vertical-align: middle;">edit</span>
+                Edit Recipe
+              </a>
+              <form method="POST" action="{% url 'recipes.delete' recipe.id %}" class="d-inline-block"
+                    onsubmit="return confirm('Delete this recipe? This action cannot be undone.');">
+                {% csrf_token %}
+                <button type="submit" class="btn-delete">
+                  <span class="material-symbols-outlined" style="font-size: 0.9rem; vertical-align: middle;">delete</span>
+                  Delete Recipe
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+  marked.setOptions({
+    breaks: true,
+    gfm: true,
+  });
+
+  // Raw recipe content from Django
+  const rawContent = `{{ recipe.content|escapejs }}`;
+  
+  // Parse markdown and display
+  const formattedContent = marked.parse(rawContent);
+  document.getElementById("formatted-recipe-content").innerHTML = formattedContent;
+</script>
+
+<style src="{% static 'css/recipe.css'}"></style>
+
+{% endblock content %}
