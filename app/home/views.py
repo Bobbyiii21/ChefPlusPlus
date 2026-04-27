@@ -1,8 +1,8 @@
 import json
+import time
 
 from django.http import JsonResponse
-from django.shortcuts import render, redirect
-from django.contrib.auth.decorators import login_required
+from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
@@ -38,7 +38,18 @@ def chat_api(request):
     history = body.get("history")
 
     from tools.vertex_chat import run_chat
+    from developer.models import QueryLog
+
+    start = time.time()
     result = run_chat(message, history)
+    elapsed = int((time.time() - start) * 1000)
+
+    user = request.user if request.user.is_authenticated else None
+    QueryLog.objects.create(
+        user=user,
+        response_time_ms=elapsed,
+        success=not result.get("error"),
+    )
 
     status = 200 if not result.get("error") else 502
     return JsonResponse(result, status=status)
