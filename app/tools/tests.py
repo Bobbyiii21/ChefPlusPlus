@@ -420,6 +420,33 @@ class TestRunChat(unittest.TestCase):
         self.assertEqual(result["error"], "")
         self.assertIn("Hi!", result["reply"])
 
+    @mock.patch("tools.vertex_chat.time.sleep", mock.Mock())
+    @mock.patch("tools.vertex_chat.vertexai")
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_rag_vector_search_quota_error_is_sanitized(self, MockModel, mock_vertexai):
+        from google.api_core import exceptions as google_exceptions
+
+        raw_error = (
+            "Failed to process Rag Managed Vertex Vector Search response.; "
+            "Failed to parse the Harpoon FetchReply from Vertex Vector Search: "
+            "Data { Status { State: URL_REJECTED } "
+            'Msg: "QPS or BW/in or BW/out quota exceeded" }'
+        )
+        MockModel.return_value.generate_content.side_effect = (
+            google_exceptions.GoogleAPIError(raw_error)
+        )
+
+        result = self._vc.run_chat("Search my documents")
+
+        self.assertEqual(
+            result["error"],
+            "The document search service is temporarily rate limited. "
+            "Please try again in a moment.",
+        )
+        self.assertNotIn("Harpoon", result["error"])
+        self.assertEqual(MockModel.return_value.generate_content.call_count, 4)
+
 
 class TestGroundedSourceRefExtraction(unittest.TestCase):
     """Vertex grounding metadata parser."""

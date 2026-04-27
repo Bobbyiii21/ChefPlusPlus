@@ -311,6 +311,10 @@ _NUMBERED_CITATION_ERROR = (
     "Use a `Source: ...` line with document or guideline names, "
     "not numeric references such as [1]."
 )
+_RAG_QUOTA_ERROR = (
+    "The document search service is temporarily rate limited. "
+    "Please try again in a moment."
+)
 
 _STRUCTURED_NUTRITION_QUERY_PATTERN = re.compile(
     r"\b("
@@ -509,7 +513,22 @@ def _is_retryable(exc: google_exceptions.GoogleAPIError) -> bool:
     msg = str(exc).lower()
     if code in _RETRYABLE_CODES:
         return True
-    return "quota" in msg or "rate" in msg
+    return "quota" in msg or "rate" in msg or "resource_exhausted" in msg
+
+
+def _google_error_message(exc: google_exceptions.GoogleAPIError) -> str:
+    return str(getattr(exc, "message", None) or str(exc))
+
+
+def _user_facing_google_error(exc: google_exceptions.GoogleAPIError) -> str:
+    msg = _google_error_message(exc)
+    folded = msg.casefold()
+    if (
+        "vertex vector search" in folded
+        and ("quota" in folded or "rate" in folded or "resource_exhausted" in folded)
+    ):
+        return _RAG_QUOTA_ERROR
+    return f"AI service error: {msg}"
 
 
 def _requires_document_citation(system_prompt_suffix: str) -> bool:
@@ -658,17 +677,20 @@ def run_chat(
                 time.sleep(wait)
                 continue
             logger.exception("Vertex AI API error")
-            detail = getattr(exc, "message", None) or str(exc)
             return {
                 "reply": "",
-                "error": f"AI service error: {detail}",
+                "error": _user_facing_google_error(exc),
                 "sources_used": [],
             }
     else:
-        detail = getattr(last_exc, "message", None) or str(last_exc)
+        detail = (
+            _user_facing_google_error(last_exc)
+            if last_exc is not None
+            else "AI service error."
+        )
         return {
             "reply": "",
-            "error": f"AI service error (after retries): {detail}",
+            "error": detail,
             "sources_used": [],
         }
 
