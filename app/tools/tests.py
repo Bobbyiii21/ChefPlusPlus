@@ -105,6 +105,7 @@ class TestConvenienceAccessors(unittest.TestCase):
         from tools.env_config import vertex_chat_model
         self.assertEqual(vertex_chat_model(), "gemini-2.0-flash")
 
+    @mock.patch("dotenv.load_dotenv", mock.Mock())
     @mock.patch.dict(os.environ, {}, clear=False)
     def test_vertex_rag_corpus_none(self):
         from tools.env_config import vertex_rag_corpus
@@ -128,6 +129,7 @@ class TestConvenienceAccessors(unittest.TestCase):
         from tools.env_config import gcs_bucket
         self.assertEqual(gcs_bucket(), "my-bucket")
 
+    @mock.patch("dotenv.load_dotenv", mock.Mock())
     @mock.patch.dict(os.environ, {}, clear=False)
     def test_gcs_bucket_missing_raises(self):
         from tools.env_config import gcs_bucket, EnvVarMissing
@@ -156,6 +158,46 @@ class TestDotenvFallback(unittest.TestCase):
 
 
 # ====================================================================
+# prompt_router tests
+# ====================================================================
+
+
+class TestPromptRouter(unittest.TestCase):
+    """Intent suffix + document catalog ordering."""
+
+    def test_general_intent_suffix_empty(self):
+        from tools import prompt_router as pr
+        self.assertEqual(pr.get_prompt_for_intent(pr.GENERAL), "")
+
+    def test_factual_intent_non_empty(self):
+        from tools import prompt_router as pr
+        s = pr.get_prompt_for_intent(pr.FACTUAL)
+        self.assertIn("factual", s.lower())
+        self.assertIn("USDA", s)
+
+    def test_build_suffix_intent_then_catalog(self):
+        from tools.prompt_router import build_chat_system_prompt_suffix
+
+        catalog = "## Documents in the retrieval corpus (from your library)\n\n- A: b"
+        out = build_chat_system_prompt_suffix("How much protein in chicken?", catalog)
+        self.assertTrue(out.startswith("## Response shape (factual)"))
+        self.assertTrue(out.endswith("A: b"))
+        self.assertLess(out.index("(factual)"), out.index("Documents in the retrieval"))
+
+    def test_build_suffix_catalog_only_when_general(self):
+        from tools.prompt_router import build_chat_system_prompt_suffix
+
+        catalog = "## Documents in the retrieval corpus (from your library)\n\n- X: y"
+        out = build_chat_system_prompt_suffix("Hello there", catalog)
+        self.assertEqual(out, catalog)
+
+    def test_build_suffix_empty_when_no_catalog_and_general(self):
+        from tools.prompt_router import build_chat_system_prompt_suffix
+
+        self.assertEqual(build_chat_system_prompt_suffix("Hello", ""), "")
+
+
+# ====================================================================
 # vertex_chat tests
 # ====================================================================
 
@@ -166,7 +208,7 @@ class TestSystemPromptManagement(unittest.TestCase):
     def setUp(self):
         import tools.vertex_chat as vc
         self._vc = vc
-        vc._cached_model = None
+        vc._model_cache.clear()
         vc._vertex_inited = False
         vc._system_prompt = vc._DEFAULT_SYSTEM_PROMPT
 
@@ -179,9 +221,9 @@ class TestSystemPromptManagement(unittest.TestCase):
         self.assertEqual(self._vc.get_system_prompt(), "You are a test bot.")
 
     def test_set_prompt_invalidates_cache(self):
-        self._vc._cached_model = "fake_model"
+        self._vc._model_cache["old"] = mock.MagicMock()  # type: ignore[assignment]
         self._vc.set_system_prompt("New prompt")
-        self.assertIsNone(self._vc._cached_model)
+        self.assertEqual(len(self._vc._model_cache), 0)
 
     def test_set_empty_prompt_raises(self):
         with self.assertRaises(ValueError):
@@ -207,7 +249,7 @@ class TestRunChat(unittest.TestCase):
     def setUp(self):
         import tools.vertex_chat as vc
         self._vc = vc
-        vc._cached_model = None
+        vc._model_cache.clear()
         vc._vertex_inited = False
         vc._system_prompt = vc._DEFAULT_SYSTEM_PROMPT
         import tools.env_config as ec
@@ -257,9 +299,11 @@ class TestRunChat(unittest.TestCase):
         result = self._vc.run_chat("Tell me more", history=history)
         self.assertEqual(result["reply"], "Follow-up reply.")
 
+    @mock.patch("dotenv.load_dotenv", mock.Mock())
     @mock.patch.dict(os.environ, {}, clear=False)
     def test_missing_project_env(self):
         os.environ.pop("GOOGLE_CLOUD_PROJECT", None)
+        os.environ.pop("VERTEX_CHAT_MODEL", None)
         result = self._vc.run_chat("test")
         self.assertIn("GOOGLE_CLOUD_PROJECT", result["error"])
 
@@ -277,6 +321,239 @@ class TestRunChat(unittest.TestCase):
 
         call_kwargs = MockModel.call_args
         self.assertIn("test bot", call_kwargs.kwargs.get("system_instruction", ""))
+
+    @mock.patch("tools.vertex_chat.vertexai")
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_system_prompt_suffix_appended(self, MockModel, mock_vertexai):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = "ok"
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        self._vc.run_chat(
+            "Hello",
+            system_prompt_suffix="## Docs\n\n- Cookbook: recipes",
+        )
+
+        instr = MockModel.call_args.kwargs.get("system_instruction", "")
+        self.assertIn("Dietary Health Assistant", instr)
+        self.assertIn("Cookbook", instr)
+        self.assertIn("## Docs", instr)
+
+    @mock.patch("tools.vertex_chat.vertexai")
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_document_based_reply_requires_citation(self, MockModel, mock_vertexai):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = "My Doc suggests adding more cinnamon."
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        result = self._vc.run_chat(
+            "Tell me about my library docs",
+            system_prompt_suffix=(
+                "## Documents in the retrieval corpus (from your library)\n"
+                "- My Doc: summary"
+            ),
+        )
+        self.assertEqual(result["reply"], "")
+        self.assertIn("Source:", result["error"])
+
+    @mock.patch("tools.vertex_chat.vertexai")
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_document_based_reply_accepts_source_line(self, MockModel, mock_vertexai):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = "My Doc suggests adding more cinnamon.\n\nSource: My Doc"
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        result = self._vc.run_chat(
+            "Tell me about my library docs",
+            system_prompt_suffix=(
+                "## Documents in the retrieval corpus (from your library)\n"
+                "- My Doc: summary"
+            ),
+        )
+        self.assertEqual(result["error"], "")
+        self.assertIn("Source: My Doc", result["reply"])
+
+    @mock.patch("tools.vertex_chat.vertexai")
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_general_reply_without_doc_reference_is_allowed(self, MockModel, mock_vertexai):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = "Whisk egg, milk, cinnamon, soak bread, then microwave briefly."
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        result = self._vc.run_chat(
+            "How do I make microwave french toast?",
+            system_prompt_suffix=(
+                "## Documents in the retrieval corpus (from your library)\n"
+                "- My Doc: summary"
+            ),
+        )
+        self.assertEqual(result["error"], "")
+        self.assertIn("Whisk egg", result["reply"])
+
+    @mock.patch("tools.vertex_chat.vertexai")
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_numbered_citations_rejected_in_document_mode(self, MockModel, mock_vertexai):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = "French toast recipe details [1, 3]."
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        result = self._vc.run_chat(
+            "How do I make microwave french toast?",
+            system_prompt_suffix=(
+                "## Documents in the retrieval corpus (from your library)\n"
+                "- Microwave French Toast Recipe: summary"
+            ),
+        )
+        self.assertEqual(result["reply"], "")
+        self.assertIn("not numeric references", result["error"])
+
+    @mock.patch("tools.vertex_chat.vertexai")
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_structured_nutrition_requires_source_line(self, MockModel, mock_vertexai):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = "Breakfast oats 400 kcal. Lunch salad 600 kcal."
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        result = self._vc.run_chat("Give me a sample meal plan with macros.")
+        self.assertEqual(result["reply"], "")
+        self.assertIn("Source:", result["error"])
+
+    @mock.patch("tools.vertex_chat.vertexai")
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_structured_nutrition_accepts_authority_source(self, MockModel, mock_vertexai):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = (
+            "Sample day with macros…\n\n"
+            "Source: Dietary Guidelines for Americans, 2020–2025; USDA FoodData Central"
+        )
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        result = self._vc.run_chat("Give me a sample meal plan with macros.")
+        self.assertEqual(result["error"], "")
+        self.assertIn("USDA FoodData Central", result["reply"])
+
+    @mock.patch("tools.vertex_chat.vertexai")
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_structured_nutrition_accepts_guidelines_only_source(self, MockModel, mock_vertexai):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = (
+            "Sample day with macros…\n\n"
+            "Source: Dietary Guidelines for Americans, 2020–2025"
+        )
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        result = self._vc.run_chat("Give me a sample meal plan with macros.")
+        self.assertEqual(result["error"], "")
+        self.assertIn("Dietary Guidelines", result["reply"])
+
+    @mock.patch("tools.vertex_chat.vertexai")
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_document_based_reply_accepts_authority_source_when_citing_library(
+        self, MockModel, mock_vertexai
+    ):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = (
+            "My Doc suggests adding more cinnamon.\n\n"
+            "Source: USDA FoodData Central"
+        )
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        result = self._vc.run_chat(
+            "Tell me about my library docs",
+            system_prompt_suffix=(
+                "## Documents in the retrieval corpus (from your library)\n"
+                "- My Doc: summary"
+            ),
+        )
+        self.assertEqual(result["error"], "")
+        self.assertIn("USDA FoodData Central", result["reply"])
+
+    @mock.patch("tools.vertex_chat.vertexai")
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_casual_question_does_not_require_source(self, MockModel, mock_vertexai):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = "Hi! What would you like to cook today?"
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        result = self._vc.run_chat("Hello")
+        self.assertEqual(result["error"], "")
+        self.assertIn("Hi!", result["reply"])
+
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch("tools.vertex_chat.time.sleep")
+    def test_rag_vector_quota_retries_with_long_backoff_then_generic(
+        self, mock_sleep, MockModel
+    ):
+        from google.api_core import exceptions as gapic_exc
+
+        msg = (
+            "Failed to process Rag Managed Vertex Vector Search response.; "
+            "QPS or BW/in or BW/out quota exceeded"
+        )
+        err = gapic_exc.GoogleAPIError(msg)
+        MockModel.return_value.generate_content.side_effect = [err] * 5
+
+        result = self._vc.run_chat("Hello")
+        self.assertEqual(result["reply"], "")
+        self.assertIn("temporarily overloaded", result["error"].lower())
+        self.assertIn("try again", result["error"].lower())
+        self.assertNotIn("Harpoon", result["error"])
+        self.assertEqual(mock_sleep.call_count, 4)
+        first_wait = mock_sleep.call_args_list[0][0][0]
+        self.assertGreaterEqual(first_wait, 4.0)
+
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch("tools.vertex_chat.time.sleep")
+    def test_recovers_after_transient_quota_errors(self, mock_sleep, MockModel):
+        from google.api_core import exceptions as gapic_exc
+
+        msg = "Failed to parse Harpoon FetchReply; QPS or BW/in or BW/out quota exceeded"
+        err = gapic_exc.GoogleAPIError(msg)
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = "Recovered."
+        MockModel.return_value.generate_content.side_effect = [err, err, mock_response]
+
+        result = self._vc.run_chat("Hello")
+        self.assertEqual(result["error"], "")
+        self.assertEqual(result["reply"], "Recovered.")
+        self.assertEqual(mock_sleep.call_count, 2)
+
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    @mock.patch("tools.vertex_chat.GenerativeModel")
+    @mock.patch("tools.vertex_chat.time.sleep")
+    def test_non_retryable_error_returns_generic_without_sleep(self, mock_sleep, MockModel):
+        from google.api_core import exceptions as gapic_exc
+
+        err = gapic_exc.PermissionDenied("Permission denied")
+        MockModel.return_value.generate_content.side_effect = err
+
+        result = self._vc.run_chat("Hello")
+        self.assertEqual(result["reply"], "")
+        self.assertIn("temporarily overloaded", result["error"].lower())
+        mock_sleep.assert_not_called()
 
 
 # ====================================================================
@@ -372,6 +649,7 @@ class TestRagFilesImport(unittest.TestCase):
         call_kwargs = mock_rag.import_files.call_args.kwargs
         self.assertEqual(call_kwargs["import_result_sink"], "gs://results/output.ndjson")
 
+    @mock.patch("dotenv.load_dotenv", mock.Mock())
     @mock.patch.dict(os.environ, {}, clear=False)
     def test_import_no_corpus_raises(self):
         os.environ.pop("VERTEX_RAG_CORPUS", None)
@@ -413,6 +691,52 @@ class TestRagFilesDelete(unittest.TestCase):
         mock_rag.delete_file.assert_called_once_with(name=file_name)
 
 
+class TestRagFilesClear(unittest.TestCase):
+    """rag_files.clear_corpus with mocked SDK."""
+
+    _ENV = {
+        "GOOGLE_CLOUD_PROJECT": "test-project",
+        "VERTEX_AI_LOCATION": "us-central1",
+        "VERTEX_RAG_CORPUS": "projects/test-project/locations/us-central1/ragCorpora/123",
+    }
+
+    def setUp(self):
+        import tools.rag_files as rf
+        self._rf = rf
+        rf._vertex_inited = False
+        import tools.env_config as ec
+        ec._dotenv_loaded = False
+
+    @mock.patch("tools.rag_files.vertexai")
+    @mock.patch("tools.rag_files.rag")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_clear_corpus_dry_run_no_deletes(self, mock_rag, mock_vertexai):
+        f1 = mock.MagicMock()
+        f1.display_name = "a.pdf"
+        f1.name = "projects/test-project/locations/us-central1/ragCorpora/123/ragFiles/1"
+        mock_rag.list_files.return_value = [f1]
+
+        out = self._rf.clear_corpus(dry_run=True)
+        self.assertEqual(len(out), 1)
+        mock_rag.delete_file.assert_not_called()
+
+    @mock.patch("tools.rag_files.vertexai")
+    @mock.patch("tools.rag_files.rag")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_clear_corpus_deletes_each_file(self, mock_rag, mock_vertexai):
+        f1 = mock.MagicMock()
+        f1.display_name = "a.pdf"
+        f1.name = "projects/test-project/locations/us-central1/ragCorpora/123/ragFiles/1"
+        f2 = mock.MagicMock()
+        f2.display_name = "b.pdf"
+        f2.name = "projects/test-project/locations/us-central1/ragCorpora/123/ragFiles/2"
+        mock_rag.list_files.return_value = [f1, f2]
+
+        out = self._rf.clear_corpus(dry_run=False)
+        self.assertEqual(len(out), 2)
+        self.assertEqual(mock_rag.delete_file.call_count, 2)
+
+
 class TestRagFilesNoCorpus(unittest.TestCase):
     """Verify graceful error when VERTEX_RAG_CORPUS is unset."""
 
@@ -423,6 +747,7 @@ class TestRagFilesNoCorpus(unittest.TestCase):
         import tools.env_config as ec
         ec._dotenv_loaded = False
 
+    @mock.patch("dotenv.load_dotenv", mock.Mock())
     @mock.patch("tools.rag_files.vertexai")
     @mock.patch.dict(os.environ, {"GOOGLE_CLOUD_PROJECT": "p", "VERTEX_AI_LOCATION": "us-central1"}, clear=False)
     def test_list_no_corpus(self, mock_vertexai):
@@ -637,6 +962,7 @@ class TestGcsStorageMissingBucket(unittest.TestCase):
         import tools.env_config as ec
         ec._dotenv_loaded = False
 
+    @mock.patch("dotenv.load_dotenv", mock.Mock())
     @mock.patch("tools.gcs_storage.storage")
     @mock.patch.dict(os.environ, {"GOOGLE_CLOUD_PROJECT": "p"}, clear=False)
     def test_upload_no_bucket_raises(self, mock_storage):
@@ -745,6 +1071,7 @@ class TestCleanTextSuccess(unittest.TestCase):
         call_kwargs = MockModel.call_args.kwargs
         self.assertIn("RAG", call_kwargs.get("system_instruction", ""))
 
+    @mock.patch("dotenv.load_dotenv", mock.Mock())
     @mock.patch.dict(os.environ, {}, clear=False)
     def test_missing_project_env(self):
         os.environ.pop("GOOGLE_CLOUD_PROJECT", None)
@@ -768,6 +1095,7 @@ class TestCleanTextDefaultModel(unittest.TestCase):
         import tools.env_config as ec
         ec._dotenv_loaded = False
 
+    @mock.patch("dotenv.load_dotenv", mock.Mock())
     @mock.patch("tools.text_cleaner.vertexai")
     @mock.patch("tools.text_cleaner.GenerativeModel")
     @mock.patch.dict(os.environ, _ENV, clear=False)
@@ -798,6 +1126,108 @@ class TestCleanTextDefaultModel(unittest.TestCase):
         self._tc.clean_text("test")
         call_kwargs = MockModel.call_args.kwargs
         self.assertEqual(call_kwargs["model_name"], "gemini-1.5-flash")
+
+
+class TestSourceTextExtract(unittest.TestCase):
+    """tools.source_text_extract.extract_text_from_upload"""
+
+    def test_txt_success(self):
+        from tools.source_text_extract import extract_text_from_upload
+
+        upload = mock.MagicMock()
+        upload.name = "notes.txt"
+        upload.read.return_value = b"  Hello world  \n"
+        text, err = extract_text_from_upload(upload)
+        self.assertEqual(err, "")
+        self.assertEqual(text, "Hello world")
+
+    def test_bad_extension(self):
+        from tools.source_text_extract import extract_text_from_upload
+
+        upload = mock.MagicMock()
+        upload.name = "x.docx"
+        upload.read.return_value = b"data"
+        text, err = extract_text_from_upload(upload)
+        self.assertEqual(text, "")
+        self.assertIn("Unsupported", err)
+
+    def test_json_success(self):
+        from tools.source_text_extract import extract_text_from_upload
+
+        upload = mock.MagicMock()
+        upload.name = "data.json"
+        upload.read.return_value = b'{"a": 1, "b": [2, 3]}'
+        text, err = extract_text_from_upload(upload)
+        self.assertEqual(err, "")
+        self.assertIn('"a"', text)
+        self.assertIn("1", text)
+
+    def test_json_invalid(self):
+        from tools.source_text_extract import extract_text_from_upload
+
+        upload = mock.MagicMock()
+        upload.name = "bad.json"
+        upload.read.return_value = b"{not json"
+        text, err = extract_text_from_upload(upload)
+        self.assertEqual(text, "")
+        self.assertIn("Invalid JSON", err)
+
+    @mock.patch("pypdf.PdfReader")
+    def test_pdf_success(self, MockReader):
+        from tools.source_text_extract import extract_text_from_upload
+
+        mock_page = mock.MagicMock()
+        mock_page.extract_text.return_value = "Chapter one"
+        mock_reader = mock.MagicMock()
+        mock_reader.pages = [mock_page]
+        MockReader.return_value = mock_reader
+
+        upload = mock.MagicMock()
+        upload.name = "doc.pdf"
+        upload.read.return_value = b"%PDF-1.4"
+        text, err = extract_text_from_upload(upload)
+        self.assertEqual(err, "")
+        self.assertEqual(text, "Chapter one")
+
+
+class TestDescriptionSummary(unittest.TestCase):
+    """tools.description_summary.summarize_for_description"""
+
+    _ENV = {
+        "GOOGLE_CLOUD_PROJECT": "test-project",
+        "VERTEX_AI_LOCATION": "us-central1",
+    }
+
+    def setUp(self):
+        import tools.description_summary as ds
+        self._ds = ds
+        ds._cached_model = None
+        ds._vertex_inited = False
+        import tools.env_config as ec
+        ec._dotenv_loaded = False
+
+    @mock.patch("tools.description_summary.vertexai")
+    @mock.patch("tools.description_summary.GenerativeModel")
+    @mock.patch.dict(os.environ, _ENV, clear=False)
+    def test_success(self, MockModel, mock_vertexai):
+        mock_response = mock.MagicMock()
+        mock_response.candidates = [mock.MagicMock()]
+        mock_response.text = "A guide to daily fiber intake for adults."
+        MockModel.return_value.generate_content.return_value = mock_response
+
+        result = self._ds.summarize_for_description("Long document about fiber...")
+        self.assertEqual(result["error"], "")
+        self.assertIn("fiber", result["description"])
+
+    def test_empty_input(self):
+        import tools.description_summary as ds
+        ds._cached_model = None
+        ds._vertex_inited = False
+        import tools.env_config as ec
+        ec._dotenv_loaded = False
+
+        result = ds.summarize_for_description("")
+        self.assertIn("No text", result["error"])
 
 
 if __name__ == "__main__":

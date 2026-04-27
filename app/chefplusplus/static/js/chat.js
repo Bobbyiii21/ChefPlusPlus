@@ -73,7 +73,11 @@ function isRecipeContent(content) {
   return false;
 }
 
-function appendMessage(role, content, isTyping = false) {
+function appendMessage(role, content, options = {}) {
+  const isTyping = Boolean(options.isTyping);
+  const referenceDownloads = options.referenceDownloads || null;
+  const intent = options.intent || null;
+
   if (emptyState) emptyState.style.display = 'none';
 
   const msg = document.createElement('div');
@@ -81,7 +85,17 @@ function appendMessage(role, content, isTyping = false) {
 
   const label = document.createElement('div');
   label.className = 'message-label';
-  label.textContent = role === 'user' ? 'you' : 'chef++';
+  if (role === 'user') {
+    label.textContent = 'you';
+  } else {
+    label.textContent = 'chef++';
+    if (!isTyping && intent) {
+      const badge = document.createElement('span');
+      badge.className = 'intent-badge';
+      badge.textContent = intent;
+      label.appendChild(badge);
+    }
+  }
 
   const bubble = document.createElement('div');
   bubble.className = 'message-bubble' + (isTyping ? ' thinking' : '');
@@ -114,6 +128,39 @@ function appendMessage(role, content, isTyping = false) {
     msg.appendChild(actions);
   }
   
+
+  if (
+    role === 'assistant' &&
+    !isTyping &&
+    Array.isArray(referenceDownloads) &&
+    referenceDownloads.length > 0
+  ) {
+    const bar = document.createElement('div');
+    bar.className = 'reference-download-bar';
+    bar.setAttribute('role', 'group');
+    bar.setAttribute('aria-label', 'Download referenced documents');
+
+    referenceDownloads.forEach((ref) => {
+      if (!ref || !ref.url) return;
+      const wrap = document.createElement('div');
+      wrap.className = 'reference-download-bubble';
+      const icon = document.createElement('span');
+      icon.className = 'material-symbols-outlined reference-download-icon';
+      icon.textContent = 'download';
+      const link = document.createElement('a');
+      link.href = ref.url;
+      link.className = 'reference-download-link';
+      link.textContent = ref.name || 'Download';
+      wrap.appendChild(icon);
+      wrap.appendChild(link);
+      bar.appendChild(wrap);
+    });
+
+    if (bar.childElementCount > 0) {
+      msg.appendChild(bar);
+    }
+  }
+
   messagesWrap.appendChild(msg);
   messagesWrap.scrollTop = messagesWrap.scrollHeight;
   return msg;
@@ -199,7 +246,7 @@ async function sendMessage() {
   input.style.height = 'auto';
   sendBtn.disabled = true;
 
-  const typingMsg = appendMessage('assistant', '', true);
+  const typingMsg = appendMessage('assistant', '', { isTyping: true });
 
   try {
     const res = await fetch('/chat/api/', {
@@ -217,7 +264,10 @@ async function sendMessage() {
     if (data.error) {
       appendMessage('assistant', 'Sorry, something went wrong: ' + data.error);
     } else {
-      appendMessage('assistant', data.reply);
+      appendMessage('assistant', data.reply, {
+        referenceDownloads: data.reference_downloads || [],
+        intent: data.intent || null,
+      });
       conversationHistory.push({ role: 'user', content: text });
       conversationHistory.push({ role: 'model', content: data.reply });
     }
