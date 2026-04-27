@@ -1,6 +1,7 @@
 import json
 import re
 
+from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
@@ -80,6 +81,71 @@ def reference_downloads_for_reply(request, reply: str) -> list[dict[str, str]]:
     return out
 
 
+def _download_entry_for_database_file(request, dbf: DatabaseFile) -> dict[str, str] | None:
+    if not dbf.file:
+        return None
+    try:
+        url = request.build_absolute_uri(dbf.file.url)
+    except ValueError:
+        return None
+    return {"name": dbf.name, "url": url}
+
+
+def _display_name_filter(name: str) -> Q:
+    return Q(name__iexact=name) | Q(file__iexact=name) | Q(file__iendswith=f"/{name}")
+
+
+def _database_file_for_source_ref(ref: dict[str, str]) -> DatabaseFile | None:
+    rag_resource_name = (ref.get("rag_resource_name") or "").strip()
+    if rag_resource_name:
+        dbf = DatabaseFile.objects.filter(
+            rag_resource_name=rag_resource_name,
+            file__gt="",
+        ).first()
+        if dbf is not None:
+            return dbf
+
+    gcs_uri = (ref.get("gcs_uri") or "").strip()
+    if gcs_uri:
+        dbf = DatabaseFile.objects.filter(gcs_uri=gcs_uri, file__gt="").first()
+        if dbf is not None:
+            return dbf
+
+    display_name = (ref.get("display_name") or "").strip()
+    if display_name:
+        return DatabaseFile.objects.filter(
+            _display_name_filter(display_name),
+            file__gt="",
+        ).first()
+    return None
+
+
+def reference_downloads_for_source_refs(
+    request,
+    source_refs: list[dict[str, str]] | None,
+) -> list[dict[str, str]]:
+    """
+    Resolve structured Vertex grounding refs to downloadable DB files.
+
+    Matching priority is per ref: RAG resource name, then GCS URI, then an
+    exact-ish display-name fallback for SDK schemas that only expose titles.
+    """
+    out: list[dict[str, str]] = []
+    seen_files: set[int] = set()
+    for ref in source_refs or []:
+        if not isinstance(ref, dict):
+            continue
+        dbf = _database_file_for_source_ref(ref)
+        if dbf is None or dbf.pk in seen_files:
+            continue
+        entry = _download_entry_for_database_file(request, dbf)
+        if entry is None:
+            continue
+        seen_files.add(dbf.pk)
+        out.append(entry)
+    return out
+
+
 def index(request):
     template_data = {}
     template_data['title'] = 'Chef++'
@@ -121,10 +187,15 @@ def chat_api(request):
 
     status = 200 if not result.get("error") else 502
     payload = dict(result)
+    payload.pop("sources_used", None)
     if not result.get("error"):
-        payload["reference_downloads"] = reference_downloads_for_reply(
-            request, result.get("reply") or ""
+        payload["reference_downloads"] = reference_downloads_for_source_refs(
+            request, result.get("sources_used") or []
         )
+        if not payload["reference_downloads"]:
+            payload["reference_downloads"] = reference_downloads_for_reply(
+                request, result.get("reply") or ""
+            )
     else:
         payload["reference_downloads"] = []
     return JsonResponse(payload, status=status)
