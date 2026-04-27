@@ -1,4 +1,5 @@
 from django.db import models
+from django.conf import settings
 from accounts.models import CPPUser
 from django.utils import timezone
 
@@ -24,5 +25,11 @@ class DatabaseFile(models.Model):
 
     def __str__(self):
         return self.name
+    
+class QueryLog(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    response_time_ms = models.IntegerField()
+    success = models.BooleanField()
 
-# Create your models here.
+

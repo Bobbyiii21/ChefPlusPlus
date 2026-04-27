@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="p-3 mt-4">
+  <div class="container">
+    <div class="mb-4 d-flex align-items-center justify-content-between">
+      <h3 class="section-header mb-0">Usage Logs</h3>
+      <a href="{% url 'developer.index' %}" class="btn btn-outline-secondary btn-sm">Back to dashboard</a>
+    </div>
+    <hr>
+    <div class="row g-3 mb-3">
+      <div class="col-md-4">
+        <div class="card border-secondary h-100">
+          <div class="card-body py-3">
+            <h6 class="card-title text-muted mb-1">Total Queries</h6>
+            <p class="card-text fs-4 mb-0">{{ template_data.num_queries }}</p>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card border-secondary h-100">
+          <div class="card-body py-3">
+            <h6 class="card-title text-muted mb-1">Success Rate</h6>
+            <p class="card-text fs-4 mb-0">{{ template_data.success_rate }}%</p>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card border-secondary h-100">
+          <div class="card-body py-3">
+            <h6 class="card-title text-muted mb-1">Avg. Response Time</h6>
+            <p class="card-text fs-4 mb-0">{{ template_data.avg_response_time }} ms</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="table-responsive mt-3">
+      <table class="table table-bordered table-hover developer-table">
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>User</th>
+            <th>Response Time (ms)</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in template_data.logs %}
+          <tr>
+            <td>{{ log.timestamp|date:"Y-m-d H:i:s" }}</td>
+            <td>{{ log.user.email|default:"Anonymous" }}</td>
+            <td>{{ log.response_time_ms }}</td>
+            <td>
+              {% if log.success %}
+                <span class="badge bg-success">OK</span>
+              {% else %}
+                <span class="badge bg-danger">Error</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="4" class="text-center text-muted">No queries logged yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock content %}

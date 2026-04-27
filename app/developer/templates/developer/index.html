@@ -12,7 +12,7 @@
 
     <div class="row g-3 mt-2">
 
-      <div class="col-md-4">
+      <div class="col-md-4" style="flex:1;">
         <a href="{% url 'developer.files' %}" class="text-decoration-none">
           <div class="card p-3 h-100 developer-card">
             <div class="d-flex align-items-center gap-2 mb-2">
@@ -20,6 +20,18 @@
               <span class="developer-card-title">Update Database</span>
             </div>
             <p class="developer-card-desc mb-0">Upload and manage files in the database.</p>
+          </div>
+        </a>
+      </div>
+
+      <div class="col-md-4" style="flex:1;">
+        <a href="{% url 'developer.logs' %}" class="text-decoration-none">
+          <div class="card p-3 h-100 developer-card">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <span class="material-symbols-outlined developer-card-icon">query_stats</span>
+              <span class="developer-card-title">Usage Logs & System Performance</span>
+            </div>
+            <p class="developer-card-desc mb-0">View query history, response times, and errors.</p>
           </div>
         </a>
       </div>
