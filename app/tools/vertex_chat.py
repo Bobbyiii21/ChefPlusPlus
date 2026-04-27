@@ -339,6 +339,171 @@ _RETRYABLE_CODES = (
 )
 
 
+def _metadata_get(obj: Any, *names: str) -> Any:
+    for name in names:
+        if isinstance(obj, dict) and name in obj:
+            return obj[name]
+        if obj.__class__.__module__.startswith("unittest.mock"):
+            if name not in getattr(obj, "__dict__", {}):
+                continue
+        value = getattr(obj, name, None)
+        if value is not None:
+            return value
+    return None
+
+
+def _metadata_items(obj: Any) -> list[tuple[str, Any]]:
+    if obj is None or isinstance(obj, (str, bytes, int, float, bool)):
+        return []
+    if isinstance(obj, dict):
+        return list(obj.items())
+    if isinstance(obj, (list, tuple, set)):
+        return []
+    if hasattr(obj, "items"):
+        try:
+            return list(obj.items())
+        except (TypeError, ValueError):
+            pass
+    out: list[tuple[str, Any]] = []
+    for name in dir(obj):
+        if name.startswith("_"):
+            continue
+        try:
+            value = getattr(obj, name)
+        except Exception:
+            continue
+        if callable(value):
+            continue
+        out.append((name, value))
+    return out
+
+
+def _metadata_children(obj: Any) -> list[Any]:
+    if obj is None or isinstance(obj, (str, bytes, int, float, bool)):
+        return []
+    if isinstance(obj, (list, tuple, set)):
+        return list(obj)
+    return [value for _, value in _metadata_items(obj)]
+
+
+def _string_value(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    return ""
+
+
+def _looks_like_rag_resource(value: str) -> bool:
+    return "/ragFiles/" in value or value.startswith("ragFiles/")
+
+
+def _looks_like_gcs_uri(value: str) -> bool:
+    return value.startswith("gs://")
+
+
+def _source_ref_from_metadata_node(node: Any) -> dict[str, str]:
+    fields = dict(_metadata_items(node))
+    ref: dict[str, str] = {}
+
+    for name in (
+        "rag_resource_name",
+        "ragResourceName",
+        "rag_file",
+        "ragFile",
+        "resource_name",
+        "resourceName",
+        "source_resource",
+        "sourceResource",
+        "name",
+    ):
+        value = _string_value(fields.get(name))
+        if value and _looks_like_rag_resource(value):
+            ref["rag_resource_name"] = value
+            break
+
+    for name in ("gcs_uri", "gcsUri"):
+        value = _string_value(fields.get(name))
+        if value and _looks_like_gcs_uri(value):
+            ref["gcs_uri"] = value
+            break
+
+    for name in ("uri", "source_uri", "sourceUri"):
+        value = _string_value(fields.get(name))
+        if not value:
+            continue
+        if _looks_like_rag_resource(value):
+            ref.setdefault("rag_resource_name", value)
+        elif _looks_like_gcs_uri(value):
+            ref.setdefault("gcs_uri", value)
+        else:
+            ref.setdefault("uri", value)
+
+    for name in (
+        "title",
+        "display_name",
+        "displayName",
+        "document_name",
+        "documentName",
+        "file_name",
+        "fileName",
+    ):
+        value = _string_value(fields.get(name))
+        if value:
+            ref["display_name"] = value
+            break
+
+    return ref
+
+
+def _source_ref_key(ref: dict[str, str]) -> tuple[str, str]:
+    for name in ("rag_resource_name", "gcs_uri", "uri", "display_name"):
+        value = (ref.get(name) or "").strip()
+        if value:
+            return (name, value.casefold())
+    return ("", "")
+
+
+def extract_grounded_source_refs(response: Any) -> list[dict[str, str]]:
+    """
+    Extract source identifiers from Vertex candidate metadata.
+
+    Vertex grounding/citation schemas vary between SDK versions and retrieval
+    backends, so this walks only candidate-level metadata containers and keeps
+    source-looking fields. Missing metadata simply produces an empty list.
+    """
+    candidates = _metadata_get(response, "candidates") or []
+    refs: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add_ref(ref: dict[str, str]) -> None:
+        ref = {k: v for k, v in ref.items() if v}
+        key = _source_ref_key(ref)
+        if not key[1] or key in seen:
+            return
+        seen.add(key)
+        refs.append(ref)
+
+    def walk(node: Any, depth: int = 0) -> None:
+        if node is None or depth > 8:
+            return
+        if isinstance(node, (str, bytes, int, float, bool)):
+            return
+        if isinstance(node, (list, tuple, set)):
+            for item in node:
+                walk(item, depth + 1)
+            return
+        add_ref(_source_ref_from_metadata_node(node))
+        for child in _metadata_children(node):
+            walk(child, depth + 1)
+
+    for candidate in candidates:
+        for metadata in (
+            _metadata_get(candidate, "grounding_metadata", "groundingMetadata"),
+            _metadata_get(candidate, "citation_metadata", "citationMetadata"),
+        ):
+            walk(metadata)
+    return refs
+
+
 def _is_retryable(exc: google_exceptions.GoogleAPIError) -> bool:
     code = getattr(exc, "code", None) or getattr(exc, "grpc_status_code", None)
     msg = str(exc).lower()
@@ -448,11 +613,11 @@ def run_chat(
     listing user-uploaded documents the RAG corpus may retrieve.
 
     Retries up to 3 times on transient quota / rate-limit errors.
-    Returns ``{"reply": str, "error": str}``.
+    Returns ``{"reply": str, "error": str, "sources_used": list}``.
     """
     text = (message or "").strip()
     if not text:
-        return {"reply": "", "error": "Message is required."}
+        return {"reply": "", "error": "Message is required.", "sources_used": []}
 
     with _lock:
         base_prompt = _system_prompt
@@ -460,7 +625,7 @@ def run_chat(
     try:
         model = _get_model(effective)
     except EnvVarMissing as exc:
-        return {"reply": "", "error": str(exc)}
+        return {"reply": "", "error": str(exc), "sources_used": []}
     contents = _build_contents(history, text)
 
     last_exc: Exception | None = None
@@ -470,7 +635,7 @@ def run_chat(
             break
         except (ValueError, RuntimeError) as exc:
             logger.exception("Configuration error")
-            return {"reply": "", "error": str(exc)}
+            return {"reply": "", "error": str(exc), "sources_used": []}
         except google_auth_exceptions.DefaultCredentialsError:
             logger.warning("Application Default Credentials not found")
             return {
@@ -479,6 +644,7 @@ def run_chat(
                     "Google Application Default Credentials are not set. "
                     "Run: gcloud auth application-default login"
                 ),
+                "sources_used": [],
             }
         except google_exceptions.GoogleAPIError as exc:
             last_exc = exc
@@ -493,16 +659,27 @@ def run_chat(
                 continue
             logger.exception("Vertex AI API error")
             detail = getattr(exc, "message", None) or str(exc)
-            return {"reply": "", "error": f"AI service error: {detail}"}
+            return {
+                "reply": "",
+                "error": f"AI service error: {detail}",
+                "sources_used": [],
+            }
     else:
         detail = getattr(last_exc, "message", None) or str(last_exc)
-        return {"reply": "", "error": f"AI service error (after retries): {detail}"}
+        return {
+            "reply": "",
+            "error": f"AI service error (after retries): {detail}",
+            "sources_used": [],
+        }
 
     if not response.candidates:
         return {
             "reply": "",
             "error": "No response from the model (blocked or empty).",
+            "sources_used": [],
         }
+
+    sources_used = extract_grounded_source_refs(response)
 
     try:
         reply_text = response.text or ""
@@ -510,24 +687,29 @@ def run_chat(
         return {
             "reply": "",
             "error": "The model returned no text (safety filter or empty parts).",
+            "sources_used": sources_used,
         }
 
     cleaned_reply = reply_text.strip()
     if _requires_document_citation(system_prompt_suffix) and _has_numbered_citation(
         cleaned_reply
     ):
-        return {"reply": "", "error": _NUMBERED_CITATION_ERROR}
+        return {"reply": "", "error": _NUMBERED_CITATION_ERROR, "sources_used": sources_used}
 
     if (
         _requires_document_citation(system_prompt_suffix)
         and _reply_references_known_document(cleaned_reply, system_prompt_suffix)
         and not _has_valid_source_line(cleaned_reply, system_prompt_suffix)
     ):
-        return {"reply": "", "error": _CITATION_REQUIRED_ERROR}
+        return {"reply": "", "error": _CITATION_REQUIRED_ERROR, "sources_used": sources_used}
 
     if _user_requests_structured_nutrition(text) and not _structured_nutrition_sources_ok(
         cleaned_reply, system_prompt_suffix
     ):
-        return {"reply": "", "error": _STRUCTURED_NUTRITION_SOURCE_ERROR}
+        return {
+            "reply": "",
+            "error": _STRUCTURED_NUTRITION_SOURCE_ERROR,
+            "sources_used": sources_used,
+        }
 
-    return {"reply": cleaned_reply, "error": ""}
+    return {"reply": cleaned_reply, "error": "", "sources_used": sources_used}

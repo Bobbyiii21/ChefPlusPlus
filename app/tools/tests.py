@@ -231,6 +231,7 @@ class TestRunChat(unittest.TestCase):
         result = self._vc.run_chat("What is protein?")
         self.assertEqual(result["reply"], "Hello! I can help with nutrition.")
         self.assertEqual(result["error"], "")
+        self.assertEqual(result["sources_used"], [])
 
     @mock.patch("tools.vertex_chat.vertexai")
     @mock.patch("tools.vertex_chat.GenerativeModel")
@@ -418,6 +419,104 @@ class TestRunChat(unittest.TestCase):
         result = self._vc.run_chat("Hello")
         self.assertEqual(result["error"], "")
         self.assertIn("Hi!", result["reply"])
+
+
+class TestGroundedSourceRefExtraction(unittest.TestCase):
+    """Vertex grounding metadata parser."""
+
+    def test_empty_when_metadata_absent(self):
+        from tools.vertex_chat import extract_grounded_source_refs
+
+        response = {"candidates": [{}]}
+        self.assertEqual(extract_grounded_source_refs(response), [])
+
+    def test_extracts_dict_grounding_chunks(self):
+        from tools.vertex_chat import extract_grounded_source_refs
+
+        rag_name = (
+            "projects/p/locations/us-central1/ragCorpora/123/ragFiles/abc"
+        )
+        response = {
+            "candidates": [
+                {
+                    "grounding_metadata": {
+                        "grounding_chunks": [
+                            {
+                                "retrieved_context": {
+                                    "uri": rag_name,
+                                    "title": "Recipe Notes",
+                                },
+                            },
+                            {
+                                "retrieved_context": {
+                                    "uri": "gs://bucket/recipe.pdf",
+                                    "title": "Recipe Notes",
+                                },
+                            },
+                        ],
+                    },
+                },
+            ],
+        }
+
+        refs = extract_grounded_source_refs(response)
+        self.assertEqual(refs[0]["rag_resource_name"], rag_name)
+        self.assertEqual(refs[0]["display_name"], "Recipe Notes")
+        self.assertEqual(refs[1]["gcs_uri"], "gs://bucket/recipe.pdf")
+
+    def test_extracts_object_camel_case_metadata_and_dedupes(self):
+        from types import SimpleNamespace
+
+        from tools.vertex_chat import extract_grounded_source_refs
+
+        rag_name = (
+            "projects/p/locations/us-central1/ragCorpora/123/ragFiles/abc"
+        )
+        chunk = SimpleNamespace(
+            retrievedContext=SimpleNamespace(
+                ragResourceName=rag_name,
+                displayName="Plan.pdf",
+            ),
+        )
+        response = SimpleNamespace(
+            candidates=[
+                SimpleNamespace(
+                    groundingMetadata=SimpleNamespace(
+                        groundingChunks=[chunk, chunk],
+                    ),
+                ),
+            ],
+        )
+
+        self.assertEqual(
+            extract_grounded_source_refs(response),
+            [{"rag_resource_name": rag_name, "display_name": "Plan.pdf"}],
+        )
+
+    def test_extracts_citation_metadata_uri(self):
+        from types import SimpleNamespace
+
+        from tools.vertex_chat import extract_grounded_source_refs
+
+        response = SimpleNamespace(
+            candidates=[
+                SimpleNamespace(
+                    citation_metadata=SimpleNamespace(
+                        citations=[
+                            SimpleNamespace(
+                                uri="gs://bucket/cited.txt",
+                                title="Cited Text",
+                            ),
+                        ],
+                    ),
+                ),
+            ],
+        )
+
+        self.assertEqual(
+            extract_grounded_source_refs(response),
+            [{"gcs_uri": "gs://bucket/cited.txt", "display_name": "Cited Text"}],
+        )
 
 
 # ====================================================================
