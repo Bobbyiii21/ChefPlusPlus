@@ -49,6 +49,9 @@
             {% endif %}
             {% if request.user.is_authenticated %}
               <li class="nav-item">
+                <a class="nav-link" href="{% url 'recipes.index' %}">Recipes</a>
+              </li>            
+              <li class="nav-item">
                 <a class="nav-link" href="{% url 'accounts.logout' %}">Log out</a>
               </li>
             {% endif %}

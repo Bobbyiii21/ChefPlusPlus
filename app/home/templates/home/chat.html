@@ -76,6 +76,33 @@
     </div>
  
   </div>
+
+  <!-- Save Recipe Modal -->
+  <div id="saveRecipeModal" class="modal" onclick="if(event.target === this) closeRecipeModal()">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Save as Recipe</h2>
+        <button class="modal-close" onclick="closeRecipeModal()">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="recipeTitle">Recipe Title</label>
+          <input type="text" id="recipeTitle" placeholder="Enter recipe name..." maxlength="255">
+        </div>
+        <div class="form-group">
+          <label>Content Preview</label>
+          <div id="recipeContentPreview" class="recipe-content-preview"></div>
+          <small>This content will be saved with your recipe</small>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn modal-btn-secondary" onclick="closeRecipeModal()">Cancel</button>
+        <button class="modal-btn modal-btn-primary" id="confirmSaveRecipe">Save Recipe</button>
+      </div>
+    </div>
+  </div>
  
 </div>
  
