@@ -62,12 +62,12 @@ def reference_downloads_for_reply(request, reply: str) -> list[dict[str, str]]:
         return []
 
     out: list[dict[str, str]] = []
-    seen: set[str] = set()
+    seen_chunks: set[str] = set()
     for chunk in chunks:
         key = chunk.casefold()
-        if key in seen:
+        if key in seen_chunks:
             continue
-        seen.add(key)
+        seen_chunks.add(key)
         dbf = DatabaseFile.objects.filter(name__iexact=chunk).first()
         if dbf is None:
             continue
@@ -78,6 +78,7 @@ def reference_downloads_for_reply(request, reply: str) -> list[dict[str, str]]:
         except ValueError:
             continue
         out.append({"name": dbf.name, "url": url})
+
     return out
 
 

@@ -30,6 +30,23 @@ else
   echo "  or mount a service account key (see comments in run.sh)." >&2
 fi
 
+# Optional: clear the Vertex RAG corpus before starting the web container.
+# Disable by running: CLEAR_RAG_BEFORE_START=0 ./run.sh
+if [[ "${CLEAR_RAG_BEFORE_START:-1}" == "1" ]]; then
+  echo "Clearing Vertex RAG corpus (best-effort)..." >&2
+  set +e
+  docker run --rm \
+    "${ENV_ARGS[@]}" \
+    "${CRED_ARGS[@]}" \
+    chefplusplus \
+    python -m tools.clean_rag_corpus --yes
+  rc=$?
+  set -e
+  if [[ $rc -ne 0 ]]; then
+    echo "Warning: could not clear RAG corpus (exit=$rc). Continuing startup." >&2
+  fi
+fi
+
 docker run --rm -p 8000:8000 \
   "${ENV_ARGS[@]}" \
   "${CRED_ARGS[@]}" \

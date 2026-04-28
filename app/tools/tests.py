@@ -388,8 +388,9 @@ class TestRunChat(unittest.TestCase):
         MockModel.return_value.generate_content.return_value = mock_response
 
         result = self._vc.run_chat("Give me a sample meal plan with macros.")
-        self.assertEqual(result["reply"], "")
-        self.assertIn("Source:", result["error"])
+        self.assertEqual(result["error"], "")
+        self.assertIn("Source:", result["reply"])
+        self.assertIn("USDA FoodData Central", result["reply"])
 
     @mock.patch("tools.vertex_chat.vertexai")
     @mock.patch("tools.vertex_chat.GenerativeModel")
