@@ -135,8 +135,6 @@ def chat_api(request):
     )
 
     status = 200 if not result.get("error") else 502
-    except Exception as e:
-        return JsonResponse({"success": False, "error": str(e)}, status=500)
     payload = dict(result)
     if not result.get("error"):
         payload["intent"] = classify_intent(message)
@@ -177,3 +175,5 @@ def save_recipe(request):
             "recipe_id": recipe.id,
             "message": "Recipe saved successfully!"
         })
+    except Exception as e:
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
