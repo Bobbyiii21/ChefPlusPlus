@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   {% load static %}
   {# {% load humanize %} #}
   <head>
@@ -22,7 +22,12 @@
     <nav class="navbar navbar-expand-lg" id="mainNav">
       <div class="container">
         <a class="navbar-brand" href="{% url 'home.index' %}">
-          Chef++
+          <img id="navLogo"
+               data-light="{% static 'img/NavLogo_LightMode.svg' %}"
+               data-dark="{% static 'img/NavLogo_DarkMode.svg' %}"
+               src="{% static 'img/NavLogo_LightMode.svg' %}"
+               alt="Chef++"
+               style="height:1.5rem;width:auto;display:block;">
         </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar" aria-controls="mainNavbar" aria-expanded="false" aria-label="Toggle navigation">
           <span class="navbar-toggler-icon"></span>
@@ -30,14 +35,17 @@
         <div class="collapse navbar-collapse" id="mainNavbar">
           <ul class="navbar-nav ms-auto mb-2 mb-lg-0 align-items-lg-center">
             <li class="nav-item">
-              <a class="nav-link" href="{% url 'home.chat' %}">Chat</a>
+              <a class="btn-site" href="{% url 'home.chat' %}">Chat</a>
+            </li>
+            <li class="nav-item">
+              <div style="width:1px;height:1.2rem;background:var(--border);margin:0 0.25rem 0 0.65rem;"></div>
             </li>
             {% if not request.user.is_authenticated %}
               <li class="nav-item">
                 <a class="nav-link" href="{% url 'accounts.register' %}">Register</a>
               </li>
               <li class="nav-item">
-                <a class="nav-link" href="{% url 'accounts.login' %}">Login</a>
+                <a class="nav-link" href="{% url 'accounts.login' %}">Log In</a>
               </li>
             {% endif %}
             {% if request.user.is_authenticated %}

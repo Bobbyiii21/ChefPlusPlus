@@ -103,7 +103,7 @@ def chat_api(request):
     forward to Vertex AI via ``run_chat``, and return the reply."""
     try:
         body = json.loads(request.body)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError:
         return JsonResponse({"reply": "", "error": "Invalid JSON."}, status=400)
 
     message = (body.get("message") or "").strip()
@@ -112,17 +112,18 @@ def chat_api(request):
 
     history = body.get("history")
 
-    from tools.prompt_router import build_chat_system_prompt_suffix, classify_intent
-    from tools.vertex_chat import run_chat
+    try:
+        from tools.prompt_router import build_chat_system_prompt_suffix, classify_intent
+        from tools.vertex_chat import run_chat
 
-    doc_index = _rag_documents_system_prompt_suffix()
-    result = run_chat(
-        message,
-        history,
-        system_prompt_suffix=build_chat_system_prompt_suffix(message, doc_index),
-    )
+        doc_index = _rag_documents_system_prompt_suffix()
+        result = run_chat(
+            message,
+            history,
+            system_prompt_suffix=build_chat_system_prompt_suffix(message, doc_index),
+        )
 
-    status = 200 if not result.get("error") else 502
+        status = 200 if not result.get("error") else 502
     except Exception as e:
         return JsonResponse({"success": False, "error": str(e)}, status=500)
     payload = dict(result)
@@ -143,7 +144,7 @@ def save_recipe(request):
     """Save a chatbot response as a recipe."""
     try:
         body = json.loads(request.body)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError:
         return JsonResponse({"success": False, "error": "Invalid JSON."}, status=400)
 
     title = (body.get("title") or "").strip()
@@ -165,3 +166,5 @@ def save_recipe(request):
             "recipe_id": recipe.id,
             "message": "Recipe saved successfully!"
         })
+    except Exception as e:
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
