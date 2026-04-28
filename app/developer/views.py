@@ -13,7 +13,7 @@ from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
 from accounts.models import CPPUser
-from .models import AccuracyTestCase, AccuracyTestRun, DatabaseFile, QueryLog
+from .models import AccuracyTestCase, AccuracyTestRun, DatabaseFile, QueryLog, Intent, Pattern
 from tools.gcs_storage import (
     upload_file as gcs_upload_file,
     upload_from_string as gcs_upload_from_string,
@@ -33,17 +33,19 @@ logger = logging.getLogger(__name__)
 ALLOWED_EXTENSIONS = {'.pdf', '.txt', '.json'}
 
 
-def allowed_visitor(user: CPPUser):
+def allowed_admin_visitor(user: CPPUser):
     return user.is_superuser
 
+def allowed_visitor(user: CPPUser):
+    return user.is_superuser or user.is_developer
 
 def allowed_developer_visitor(user: CPPUser):
-    return user.is_superuser or user.is_developer
+    return user.is_developer
 
 
 @login_required
 def index(request):
-    if not allowed_developer_visitor(request.user):
+    if not allowed_visitor(request.user):
         return redirect('home.index')
     template_data = {}
     template_data['title'] = 'Developer Tools'
@@ -591,8 +593,89 @@ def accuracy(request):
         'form_values': form_values,
     }
     return render(request, 'developer/accuracy.html', {'template_data': template_data})
+
+
+@login_required
+def prompt_router_editor(request):
+    if not allowed_developer_visitor(request.user):
+        return redirect('home.index')
+
+    error = None
+    success = None
+
+    if request.method == 'POST':
+        subfield = request.POST.get('subfield', '')
+
+        if subfield == 'add_intent':
+            name = request.POST.get('intent_name', '').strip()
+            prompt = request.POST.get('intent_prompt', '').strip()
+            if not name:
+                error = 'Intent name is required.'
+            elif Intent.objects.filter(name=name).exists():
+                error = f'Intent "{name}" already exists.'
+            else:
+                Intent.objects.create(name=name, prompt=prompt)
+                success = f'Added intent "{name}".'
+
+        elif subfield == 'edit_intent':
+            intent_id = request.POST.get('intent_id')
+            try:
+                intent = Intent.objects.get(pk=intent_id)
+            except Intent.DoesNotExist:
+                error = 'Intent not found.'
+            else:
+                prompt = request.POST.get('intent_prompt', '').strip()
+                intent.prompt = prompt
+                intent.save()
+                success = f'Updated prompt for "{intent.name}".'
+
+        elif subfield == 'delete_intent':
+            intent_id = request.POST.get('intent_id')
+            try:
+                intent = Intent.objects.get(pk=intent_id)
+                if intent.name == 'general':
+                    error = 'Cannot delete the general intent.'
+                else:
+                    intent.delete()
+                    success = f'Deleted intent "{intent.name}".'
+            except Intent.DoesNotExist:
+                error = 'Intent not found.'
+
+        elif subfield == 'add_pattern':
+            intent_id = request.POST.get('intent_id')
+            regex = request.POST.get('regex', '').strip()
+            try:
+                intent = Intent.objects.get(pk=intent_id)
+            except Intent.DoesNotExist:
+                error = 'Intent not found.'
+            else:
+                if not regex:
+                    error = 'Regex pattern is required.'
+                else:
+                    Pattern.objects.create(intent=intent, regex=regex)
+                    success = f'Added pattern to "{intent.name}".'
+
+        elif subfield == 'delete_pattern':
+            pattern_id = request.POST.get('pattern_id')
+            try:
+                pattern = Pattern.objects.get(pk=pattern_id)
+                pattern.delete()
+                success = f'Deleted pattern from "{pattern.intent.name}".'
+            except Pattern.DoesNotExist:
+                error = 'Pattern not found.'
+
+    intents = Intent.objects.all().order_by('name')
+    template_data = {
+        'title': 'Prompt Router',
+        'error': error,
+        'success': success,
+        'intents': intents,
+    }
+    return render(request, 'developer/prompt_router.html', {'template_data': template_data})
+
+
 def usage_logs(request):
-    if not allowed_visitor(request.user):
+    if not allowed_admin_visitor(request.user):
         return redirect('home.index')
 
     logs = QueryLog.objects.all().order_by('-timestamp')

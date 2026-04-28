@@ -13,5 +13,6 @@ urlpatterns = [
         views.suggest_description_api,
         name='developer.api.suggest_description',
     ),
+    path('prompt-router', views.prompt_router_editor, name='developer.prompt_router'),
     path('logs', views.usage_logs, name='developer.logs'),
 ]

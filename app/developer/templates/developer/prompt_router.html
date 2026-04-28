@@ -1,0 +1,184 @@
+{% extends 'base.html' %}
+{% block content %}
+{% load static %}
+
+<div class="p-3 mt-4">
+  <div class="container">
+    <div class="row justify-content-center">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h3 class="section-header mb-0">Prompt Router Editor</h3>
+        <button type="button" class="btn-site" data-bs-toggle="modal" data-bs-target="#addIntentModal">+ Add Intent</button>
+      </div>
+      <hr>
+
+      {% if template_data.error %}
+      <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        {{ template_data.error }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+      {% endif %}
+
+      {% if template_data.success %}
+      <div class="alert alert-success alert-dismissible fade show" role="alert">
+        {{ template_data.success }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+      {% endif %}
+
+      {% for intent in template_data.intents %}
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0">{{ intent.name|title }}</h5>
+          {% if intent.name != 'general' %}
+          <div>
+            <button type="button" class="btn btn-sm btn-outline-primary me-2" data-bs-toggle="modal" data-bs-target="#editIntentModal-{{ intent.id }}">Edit Prompt</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteIntentModal-{{ intent.id }}">Delete</button>
+          </div>
+          {% endif %}
+        </div>
+        <div class="card-body">
+          <h6>Prompt:</h6>
+          <pre class="bg-light p-2 rounded">{{ intent.prompt|default:"(No prompt)" }}</pre>
+          
+          <h6 class="mt-3">Patterns:</h6>
+          {% if intent.patterns.all %}
+          <ul class="list-group mb-2">
+            {% for pattern in intent.patterns.all %}
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+              <code>{{ pattern.regex }}</code>
+              <form method="POST" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="subfield" value="delete_pattern">
+                <input type="hidden" name="pattern_id" value="{{ pattern.id }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this pattern?')">×</button>
+              </form>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p class="text-muted">No patterns defined.</p>
+          {% endif %}
+          
+          <button type="button" class="btn btn-sm btn-site" data-bs-toggle="modal" data-bs-target="#addPatternModal-{{ intent.id }}">+ Add Pattern</button>
+        </div>
+      </div>
+
+      <!-- Edit Intent Modal -->
+      <div class="modal fade" id="editIntentModal-{{ intent.id }}" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Edit Prompt for {{ intent.name|title }}</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST">
+              {% csrf_token %}
+              <input type="hidden" name="subfield" value="edit_intent">
+              <input type="hidden" name="intent_id" value="{{ intent.id }}">
+              <div class="modal-body">
+                <div class="mb-3">
+                  <label for="intent-prompt-{{ intent.id }}" class="form-label">Prompt</label>
+                  <textarea class="form-control" id="intent-prompt-{{ intent.id }}" name="intent_prompt" rows="6">{{ intent.prompt }}</textarea>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <!-- Delete Intent Modal -->
+      <div class="modal fade" id="deleteIntentModal-{{ intent.id }}" tabindex="-1">
+        <div class="modal-dialog">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Delete Intent</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <p>Are you sure you want to delete the intent "{{ intent.name }}" and all its patterns?</p>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+              <form method="POST" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="subfield" value="delete_intent">
+                <input type="hidden" name="intent_id" value="{{ intent.id }}">
+                <button type="submit" class="btn btn-danger">Delete</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Add Pattern Modal -->
+      <div class="modal fade" id="addPatternModal-{{ intent.id }}" tabindex="-1">
+        <div class="modal-dialog">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Add Pattern to {{ intent.name|title }}</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST">
+              {% csrf_token %}
+              <input type="hidden" name="subfield" value="add_pattern">
+              <input type="hidden" name="intent_id" value="{{ intent.id }}">
+              <div class="modal-body">
+                <div class="mb-3">
+                  <label for="pattern-regex-{{ intent.id }}" class="form-label">Regex Pattern</label>
+                  <input type="text" class="form-control" id="pattern-regex-{{ intent.id }}" name="regex" required>
+                  <div class="form-text">Use Python regex syntax. Word boundaries (\b) are recommended.</div>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+
+      {% if not template_data.intents %}
+      <p class="text-muted mt-3">No intents defined yet. Click "+ Add Intent" to get started.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Add Intent Modal -->
+<div class="modal fade" id="addIntentModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Add New Intent</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST">
+        {% csrf_token %}
+        <input type="hidden" name="subfield" value="add_intent">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="new-intent-name" class="form-label">Intent Name</label>
+            <input type="text" class="form-control" id="new-intent-name" name="intent_name" required>
+            <div class="form-text">Lowercase, no spaces (e.g., "factual", "creative").</div>
+          </div>
+          <div class="mb-3">
+            <label for="new-intent-prompt" class="form-label">Prompt</label>
+            <textarea class="form-control" id="new-intent-prompt" name="intent_prompt" rows="6" placeholder="Enter the prompt guidance for this intent..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add Intent</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock content %}

@@ -71,3 +71,19 @@ class AccuracyTestRun(models.Model):
 
     def __str__(self):
         return f"{self.test_case.name} - {self.get_status_display()}"
+
+
+class Intent(models.Model):
+    name = models.CharField(max_length=50, unique=True)
+    prompt = models.TextField(blank=True)
+
+    def __str__(self):
+        return self.name
+
+
+class Pattern(models.Model):
+    intent = models.ForeignKey(Intent, on_delete=models.CASCADE, related_name='patterns')
+    regex = models.CharField(max_length=2047)
+
+    def __str__(self):
+        return f"{self.intent.name}: {self.regex}"
