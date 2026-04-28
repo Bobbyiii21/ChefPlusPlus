@@ -5,6 +5,42 @@ const emptyState = document.getElementById('emptyState');
 
 const conversationHistory = [];
 
+function getTheme() {
+  return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+}
+
+function avatarSrc(isTyping) {
+  const theme = getTheme();
+  if (isTyping) {
+    return theme === 'light'
+      ? '/static/img/Chat_Thinking_LightMode.gif'
+      : '/static/img/Chat_Thinking_DarkMode.gif';
+  }
+  return theme === 'light'
+    ? '/static/img/Chat_Icon_LightMode.png'
+    : '/static/img/Chat_Icon_DarkMode.png';
+}
+
+function logoSrc() {
+  return getTheme() === 'light'
+    ? '/static/img/ChefPlusPlusLogo_LightMode.svg'
+    : '/static/img/ChefPlusPlusLogo_DarkMode.svg';
+}
+
+function updateThemeImages() {
+  document.querySelectorAll('.assistant-avatar img').forEach(img => {
+    const isTyping = img.closest('.message.assistant')
+      ?.querySelector('.message-bubble')?.classList.contains('thinking') ?? false;
+    img.src = avatarSrc(isTyping);
+  });
+  const logo = document.getElementById('emptyStateLogo');
+  if (logo) logo.src = logoSrc();
+}
+
+// Set initial logo src and update all theme-sensitive images on theme change
+document.getElementById('emptyStateLogo').src = logoSrc();
+new MutationObserver(updateThemeImages).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
 marked.setOptions({
   breaks: true,
   gfm: true,
@@ -73,6 +109,25 @@ function isRecipeContent(content) {
   return false;
 }
 
+function typewriterBubble(bubble, html, speed = 8) {
+  const chars = [...html];
+  let i = 0;
+  let current = '';
+
+  function tick() {
+    // Advance by a small chunk per frame so it feels fast but smooth
+    const chunkSize = Math.max(1, Math.floor(speed));
+    for (let c = 0; c < chunkSize && i < chars.length; c++, i++) {
+      current += chars[i];
+    }
+    bubble.innerHTML = current;
+    messagesWrap.scrollTop = messagesWrap.scrollHeight;
+    if (i < chars.length) requestAnimationFrame(tick);
+  }
+
+  requestAnimationFrame(tick);
+}
+
 function appendMessage(role, content, options = {}) {
   const isTyping = Boolean(options.isTyping);
   const referenceDownloads = options.referenceDownloads || null;
@@ -85,16 +140,11 @@ function appendMessage(role, content, options = {}) {
 
   const label = document.createElement('div');
   label.className = 'message-label';
-  if (role === 'user') {
-    label.textContent = 'you';
-  } else {
-    label.textContent = 'chef++';
-    if (!isTyping && intent) {
-      const badge = document.createElement('span');
-      badge.className = 'intent-badge';
-      badge.textContent = intent;
-      label.appendChild(badge);
-    }
+  if (!isTyping && role === 'assistant' && intent) {
+    const badge = document.createElement('span');
+    badge.className = 'intent-badge';
+    badge.textContent = intent;
+    label.appendChild(badge);
   }
 
   const bubble = document.createElement('div');
@@ -102,63 +152,68 @@ function appendMessage(role, content, options = {}) {
   var formattedContent;
 
   if (isTyping) {
-    bubble.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+    bubble.innerHTML = '';
   } else if (role === 'assistant') {
     bubble.classList.add('markdown-body');
     formattedContent = marked.parse(content);
-    bubble.innerHTML = formattedContent;
+    typewriterBubble(bubble, formattedContent);
   } else {
     bubble.textContent = content;
   }
 
-  msg.appendChild(label);
-  msg.appendChild(bubble);
-  
-  // Add save recipe button only for assistant messages that contain recipes
-  if (role === 'assistant' && !isTyping && isRecipeContent(content)) {
-    const actions = document.createElement('div');
-    actions.className = 'message-actions';
-    
-    const saveBtn = document.createElement('button');
-    saveBtn.className = 'save-recipe-btn';
-    saveBtn.textContent = 'Save as Recipe';
-    saveBtn.onclick = () => openSaveRecipeModal(content);
-    
-    actions.appendChild(saveBtn);
-    msg.appendChild(actions);
-  }
-  
+  // For assistant messages, wrap content in a column alongside an avatar
+  if (role === 'assistant') {
+    const avatar = document.createElement('div');
+    avatar.className = 'assistant-avatar';
+    const avatarImg = document.createElement('img');
+    avatarImg.src = avatarSrc(isTyping);
+    avatarImg.alt = 'Chef++ avatar';
+    avatar.appendChild(avatarImg);
 
-  if (
-    role === 'assistant' &&
-    !isTyping &&
-    Array.isArray(referenceDownloads) &&
-    referenceDownloads.length > 0
-  ) {
-    const bar = document.createElement('div');
-    bar.className = 'reference-download-bar';
-    bar.setAttribute('role', 'group');
-    bar.setAttribute('aria-label', 'Download referenced documents');
+    const content_col = document.createElement('div');
+    content_col.className = 'assistant-content-col';
+    if (label.childElementCount > 0 || label.textContent) content_col.appendChild(label);
+    content_col.appendChild(bubble);
 
-    referenceDownloads.forEach((ref) => {
-      if (!ref || !ref.url) return;
-      const wrap = document.createElement('div');
-      wrap.className = 'reference-download-bubble';
-      const icon = document.createElement('span');
-      icon.className = 'material-symbols-outlined reference-download-icon';
-      icon.textContent = 'download';
-      const link = document.createElement('a');
-      link.href = ref.url;
-      link.className = 'reference-download-link';
-      link.textContent = ref.name || 'Download';
-      wrap.appendChild(icon);
-      wrap.appendChild(link);
-      bar.appendChild(wrap);
-    });
-
-    if (bar.childElementCount > 0) {
-      msg.appendChild(bar);
+    if (!isTyping && isRecipeContent(content)) {
+      const actions = document.createElement('div');
+      actions.className = 'message-actions';
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'save-recipe-btn';
+      saveBtn.textContent = 'Save as Recipe';
+      saveBtn.onclick = () => openSaveRecipeModal(content);
+      actions.appendChild(saveBtn);
+      content_col.appendChild(actions);
     }
+
+    if (!isTyping && Array.isArray(referenceDownloads) && referenceDownloads.length > 0) {
+      const bar = document.createElement('div');
+      bar.className = 'reference-download-bar';
+      bar.setAttribute('role', 'group');
+      bar.setAttribute('aria-label', 'Download referenced documents');
+      referenceDownloads.forEach((ref) => {
+        if (!ref || !ref.url) return;
+        const wrap = document.createElement('div');
+        wrap.className = 'reference-download-bubble';
+        const icon = document.createElement('span');
+        icon.className = 'material-symbols-outlined reference-download-icon';
+        icon.textContent = 'download';
+        const link = document.createElement('a');
+        link.href = ref.url;
+        link.className = 'reference-download-link';
+        link.textContent = ref.name || 'Download';
+        wrap.appendChild(icon);
+        wrap.appendChild(link);
+        bar.appendChild(wrap);
+      });
+      if (bar.childElementCount > 0) content_col.appendChild(bar);
+    }
+
+    msg.appendChild(avatar);
+    msg.appendChild(content_col);
+  } else {
+    msg.appendChild(label);
+    msg.appendChild(bubble);
   }
 
   messagesWrap.appendChild(msg);
@@ -244,19 +299,24 @@ async function sendMessage() {
 
   input.value = '';
   input.style.height = 'auto';
+  input.disabled = true;
   sendBtn.disabled = true;
 
+  const MIN_THINKING_MS = 1000;
   const typingMsg = appendMessage('assistant', '', { isTyping: true });
 
   try {
-    const res = await fetch('/chat/api/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: text,
-        history: conversationHistory.length ? conversationHistory : null,
+    const [res] = await Promise.all([
+      fetch('/chat/api/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          history: conversationHistory.length ? conversationHistory : null,
+        }),
       }),
-    });
+      new Promise(resolve => setTimeout(resolve, MIN_THINKING_MS)),
+    ]);
 
     const data = await res.json();
     typingMsg.remove();
@@ -274,5 +334,8 @@ async function sendMessage() {
   } catch (err) {
     typingMsg.remove();
     appendMessage('assistant', 'Network error — please try again.');
+  } finally {
+    input.disabled = false;
+    input.focus();
   }
 }

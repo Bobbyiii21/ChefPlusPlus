@@ -56,9 +56,9 @@
 }
 
 #mainNav .navbar-brand {
-  font-family: 'DM Serif Display', serif;
-  font-weight: 400;
-  font-size: 1.5em;
+  font-family: 'IBM Plex Serif', serif;
+  font-weight: 500;
+  font-size: 1.6em;
 }
 
 #mainNav .nav-link:hover {
@@ -224,6 +224,11 @@ a {
 
 a:hover {
   color: var(--text);
+}
+
+h2, h3 {
+  font-family: 'IBM Plex Serif', serif;
+  font-weight: 500;
 }
 
 /* --- Utility: monospace --- */

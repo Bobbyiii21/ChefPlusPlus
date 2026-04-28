@@ -118,7 +118,7 @@ def chat_api(request):
     forward to Vertex AI via ``run_chat``, and return the reply."""
     try:
         body = json.loads(request.body)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError:
         return JsonResponse({"reply": "", "error": "Invalid JSON."}, status=400)
 
     message = (body.get("message") or "").strip()
@@ -167,7 +167,7 @@ def save_recipe(request):
     """Save a chatbot response as a recipe."""
     try:
         body = json.loads(request.body)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError:
         return JsonResponse({"success": False, "error": "Invalid JSON."}, status=400)
 
     title = (body.get("title") or "").strip()
