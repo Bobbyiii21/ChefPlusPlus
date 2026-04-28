@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block content %}
+{% load static %}
+
+<div class="p-3 mt-4">
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-6 mx-auto">
+        <div class="alert alert-danger" role="alert">
+          <h4 class="alert-heading">Delete Recipe?</h4>
+          <p class="mb-0">
+            Are you sure you want to delete "<strong>{{ recipe.title }}</strong>"? 
+            This action cannot be undone.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-body">
+            <form method="post" class="d-flex gap-2">
+              {% csrf_token %}
+              <button type="submit" class="btn-delete flex-grow-1">
+                <span class="material-symbols-outlined" style="font-size: 0.9rem; vertical-align: middle;">delete</span>
+                Delete Recipe
+              </button>
+              <a href="{% url 'recipes.detail' recipe.id %}" class="btn-site flex-grow-1">
+                Cancel
+              </a>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .alert-danger {
+    background-color: rgba(220, 53, 69, 0.1);
+    border: 1px solid rgba(220, 53, 69, 0.3);
+    color: var(--text);
+  }
+
+  .alert-danger h4 {
+    color: #dc3545;
+  }
+
+  .card {
+    border: 1px solid var(--border);
+    background-color: var(--surface);
+  }
+
+  .card-body {
+    display: flex;
+    gap: 1rem;
+  }
+
+  .card-body button,
+  .card-body a {
+    flex: 1;
+  }
+
+  @media (max-width: 576px) {
+    .card-body {
+      flex-direction: column;
+    }
+  }
+</style>
+
+{% endblock content %}
