@@ -180,6 +180,15 @@
   color: var(--text-muted);
 }
 
+/* --- Developer Table --- */
+.developer-table th {
+  background-color: var(--border);
+  border-color: var(--border);
+  color: var(--text);
+  text-decoration: none;
+}
+
+
 /* --- Footer --- */
 .footer-text {
   color: var(--text);

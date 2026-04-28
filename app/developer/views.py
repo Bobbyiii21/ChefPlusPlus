@@ -13,7 +13,7 @@ from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
 from accounts.models import CPPUser
-from .models import AccuracyTestCase, AccuracyTestRun, DatabaseFile
+from .models import AccuracyTestCase, AccuracyTestRun, DatabaseFile, QueryLog
 from tools.gcs_storage import (
     upload_file as gcs_upload_file,
     upload_from_string as gcs_upload_from_string,
@@ -591,3 +591,23 @@ def accuracy(request):
         'form_values': form_values,
     }
     return render(request, 'developer/accuracy.html', {'template_data': template_data})
+def usage_logs(request):
+    if not allowed_visitor(request.user):
+        return redirect('home.index')
+
+    logs = QueryLog.objects.all().order_by('-timestamp')
+    template_data = {
+        'title': 'Usage Logs',
+        'logs': logs,
+    }
+    successes = 0
+    total_response_time = 0
+    for log in logs:
+        successes += 1 if log.success else 0
+        total_response_time += log.response_time_ms
+    num_queries = len(logs)
+    template_data['num_queries'] = num_queries
+    template_data['success_rate'] = int(100 * successes / num_queries) if num_queries else 0
+    template_data['avg_response_time'] = int(total_response_time / num_queries) if num_queries else 0
+
+    return render(request, 'developer/logs.html', {'template_data': template_data})

@@ -1,5 +1,6 @@
 import json
 import re
+import time
 
 from django.http import JsonResponse
 from django.shortcuts import render
@@ -112,12 +113,23 @@ def chat_api(request):
 
     from tools.prompt_router import build_chat_system_prompt_suffix, classify_intent
     from tools.vertex_chat import run_chat
+    from developer.models import QueryLog
 
-    doc_index = _rag_documents_system_prompt_suffix()
-    result = run_chat(
-        message,
-        history,
-        system_prompt_suffix=build_chat_system_prompt_suffix(message, doc_index),
+    # doc_index = _rag_documents_system_prompt_suffix()
+    # result = run_chat(
+    #     message,
+    #     history,
+    #     system_prompt_suffix=build_chat_system_prompt_suffix(message, doc_index),
+
+    start = time.time()
+    result = run_chat(message, history)
+    elapsed = int((time.time() - start) * 1000)
+
+    user = request.user if request.user.is_authenticated else None
+    QueryLog.objects.create(
+        user=user,
+        response_time_ms=elapsed,
+        success=not result.get("error"),
     )
 
     status = 200 if not result.get("error") else 502

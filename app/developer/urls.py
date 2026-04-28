@@ -13,4 +13,5 @@ urlpatterns = [
         views.suggest_description_api,
         name='developer.api.suggest_description',
     ),
+    path('logs', views.usage_logs, name='developer.logs'),
 ]

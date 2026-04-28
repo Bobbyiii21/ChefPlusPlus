@@ -43,7 +43,7 @@
             {% if request.user.is_authenticated %}
               {% if request.user.is_developer or request.user.is_superuser %}
               <li class="nav-item">
-                <a class="nav-link" href="{% url 'developer.index' %}">Admin Tools</a>
+                <a class="nav-link" href="{% url 'developer.index' %}">{% if request.user.is_superuser %} Admin {% else %} Developer {% endif %} Tools</a>
               </li>
               {% endif %}
             {% endif %}

@@ -12,8 +12,7 @@
 
     <div class="row g-3 mt-2">
 
-      {% if request.user.is_superuser %}
-      <div class="col-md-4">
+      <div class="col-md-4" style="flex:1;">
         <a href="{% url 'developer.files' %}" class="text-decoration-none">
           <div class="card p-3 h-100 developer-card">
             <div class="d-flex align-items-center gap-2 mb-2">
@@ -24,9 +23,9 @@
           </div>
         </a>
       </div>
-      {% endif %}
 
-      <div class="col-md-4">
+      {% if request.user.is_developer %}
+      <div class="col-md-4" style="flex:1;">
         <a href="{% url 'developer.accuracy' %}" class="text-decoration-none">
           <div class="card p-3 h-100 developer-card">
             <div class="d-flex align-items-center gap-2 mb-2">
@@ -37,6 +36,21 @@
           </div>
         </a>
       </div>
+      {% endif %}
+
+      {% if request.user.is_superuser %}
+      <div class="col-md-4" style="flex:1;">
+        <a href="{% url 'developer.logs' %}" class="text-decoration-none">
+          <div class="card p-3 h-100 developer-card">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <span class="material-symbols-outlined developer-card-icon">query_stats</span>
+              <span class="developer-card-title">Usage Logs & System Performance</span>
+            </div>
+            <p class="developer-card-desc mb-0">View query history, response times, and errors.</p>
+          </div>
+        </a>
+      </div>
+      {% endif %}
 
     </div>
   </div>
