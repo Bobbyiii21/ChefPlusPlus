@@ -3,7 +3,33 @@ import logging
 import os
 import tempfile
 import threading
-import time
+
+from django.contrib.auth.decorators import login_required
+from django.db import close_old_connections, connections, transaction
+from django.http import JsonResponse
+from django.shortcuts import redirect, render
+from django.utils.text import slugify
+from django.views.decorators.http import require_POST
+
+from accounts.models import CPPUser
+from .models import DatabaseFile
+from tools.gcs_storage import (
+    upload_file as gcs_upload_file,
+    upload_from_string as gcs_upload_from_string,
+    delete_file as gcs_delete_file,
+)
+from tools.rag_files import (
+    list_files as rag_list_files,
+    import_files as rag_import_files,
+    delete_file as rag_delete_file,
+)
+from tools.text_cleaner import clean_text
+from tools.description_summary import summarize_for_description
+from tools.source_text_extract import extract_text_from_upload
+
+logger = logging.getLogger(__name__)
+
+ALLOWED_EXTENSIONS = {'.pdf', '.txt', '.json'}
 
 from django.contrib.auth.decorators import login_required
 from django.db import close_old_connections, connections, transaction
@@ -60,11 +86,13 @@ def _validate_file_extension(uploaded_file):
 
 
 def _gcs_destination_from_name(name: str, ext: str) -> str:
-    safe = slugify((name or '').strip()) or 'untitled'
-    return f'rag_dataset/{safe}{ext}'
+    """Build a stable GCS object name from the form name."""
+    safe = slugify((name or "").strip()) or "untitled"
+    return f"rag_dataset/{safe}{ext}"
 
 
 def _import_to_rag(gcs_uri, db_file):
+    """Import a GCS URI into the RAG corpus and store the resource name."""
     try:
         existing_names = {f.name for f in rag_list_files()}
         result = rag_import_files([gcs_uri])
@@ -76,10 +104,16 @@ def _import_to_rag(gcs_uri, db_file):
                     db_file.save(update_fields=['rag_resource_name'])
                     break
     except Exception:
-        logger.exception('RAG import failed for %s', gcs_uri)
+        logger.exception("RAG import failed for %s", gcs_uri)
 
 
 def _background_rag_import(db_file_id: int, gcs_uri: str) -> None:
+    """
+    Run Vertex RAG import off the HTTP worker.
+
+    ``rag.import_files`` blocks for minutes while polling; doing that in the
+    request thread hits Gunicorn's ``worker_timeout``.
+    """
     close_old_connections()
     try:
         db_file = DatabaseFile.objects.get(pk=db_file_id)
@@ -95,6 +129,8 @@ def _background_rag_import(db_file_id: int, gcs_uri: str) -> None:
 
 
 def _schedule_rag_import(db_file: DatabaseFile, gcs_uri: str) -> None:
+    """Start RAG import after the current DB transaction commits."""
+
     def start_thread() -> None:
         threading.Thread(
             target=_background_rag_import,
@@ -107,17 +143,22 @@ def _schedule_rag_import(db_file: DatabaseFile, gcs_uri: str) -> None:
 
 
 def _display_name_for_rag_file(rag_file) -> str:
-    name = (getattr(rag_file, 'display_name', '') or '').strip()
+    name = (getattr(rag_file, "display_name", "") or "").strip()
     if name:
         return name
-    resource = (getattr(rag_file, 'name', '') or '').strip()
+    resource = (getattr(rag_file, "name", "") or "").strip()
     if resource:
-        return resource.rsplit('/', 1)[-1]
-    return '(unnamed corpus file)'
+        return resource.rsplit("/", 1)[-1]
+    return "(unnamed corpus file)"
 
 
 def _delete_from_rag_corpus(rag_resource_name: str) -> bool:
-    resource = (rag_resource_name or '').strip()
+    """
+    Delete a single resource from the RAG corpus.
+
+    Returns True on success, False when deletion fails.
+    """
+    resource = (rag_resource_name or "").strip()
     if not resource:
         return False
     try:
@@ -129,8 +170,15 @@ def _delete_from_rag_corpus(rag_resource_name: str) -> bool:
 
 
 def _managed_file_rows() -> list[dict]:
+    """
+    Merge DB rows with live RAG corpus files for the manage-db page.
+
+    - If a corpus file exists in DB (matched by rag_resource_name), show DB data.
+    - If a corpus file is missing in DB, create a placeholder row.
+    - DB rows that are not yet in corpus are still shown.
+    """
     db_rows = list(
-        DatabaseFile.objects.select_related('uploader').all().order_by('-date_added')
+        DatabaseFile.objects.select_related("uploader").all().order_by("-date_added")
     )
     by_rag_name = {row.rag_resource_name: row for row in db_rows if row.rag_resource_name}
 
@@ -403,10 +451,13 @@ def delete_database_file(request, file_id):
 @login_required
 @require_POST
 def delete_corpus_only_file(request):
+    """
+    Delete a RAG resource directly (for entries missing from the DB table).
+    """
     if not allowed_visitor(request.user):
         return redirect('home.index')
 
-    rag_name = (request.POST.get('rag_resource_name') or '').strip()
+    rag_name = (request.POST.get('rag_resource_name') or "").strip()
     if not rag_name:
         return redirect('developer.files')
 

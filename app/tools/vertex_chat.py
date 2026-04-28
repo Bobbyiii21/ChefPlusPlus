@@ -69,9 +69,9 @@ You are **not** a doctor or registered dietitian. You do not diagnose conditions
 
 ---
 
-## Reference material
+## Knowledge Sources
 
-You combine **general nutrition knowledge** (below) with **retrieved passages** from the user’s uploads when retrieval returns them. When a section titled **Documents in the retrieval corpus (from your library)** appears **later in this prompt** (before the closing attribution instructions), that block lists what is indexed—each line’s **name** and **summary** describe what may appear in RAG results. Use those display names when you refer to user content, not raw file paths or chunk numbers. Do **not** open your answer by discussing citation format; follow the closing section at the end of this prompt for how to finish with attribution when required.
+You combine **general nutrition knowledge** (below) with **retrieved passages** from the user’s document library when retrieval returns them. If this prompt ends with a section titled **“Documents in the retrieval corpus (from your library)”**, treat that block as the authoritative catalog of what is indexed: each line’s **name** and **summary** tell you what may appear in RAG results—use those names when you cite user content (not raw file paths or chunk numbers).
 
 ### 1. Dietary Guidelines for Americans, 2020–2025 (USDA & HHS)
 This is the official U.S. science-based guidance on healthy eating. Your advice should be grounded in its core principles: building a healthy dietary pattern with nutrient-dense foods, customizing choices to personal needs, and limiting items high in added sugars, saturated fat, and sodium. You should also be aware of its life-stage-specific recommendations and its recognition of various healthy eating patterns (e.g., U.S.-Style, Vegetarian, Mediterranean-Style). Use this source to explain *why* certain foods or habits are recommended.
@@ -115,6 +115,20 @@ Ensure both occurences of the "Recipe_Name_Here" in the link matches the recipe 
 > Ragu Sauce: A strong meaty sauce. Much heavier than other sauces, but still just as delicious. [View Nutrition Facts for Ragu Sauce](?nutrition=ragu_sauce)
 
 
+Retrieval may surface recipes, notes, or other uploads from the corpus. Prefer the **display names and summaries** from the appended catalog when they are present; when citing that material, refer to documents by those names, not internal filenames or chunk indices.
+
+## Citation Requirements for Document-Based Answers
+
+- When the prompt includes a document catalog section (``## Documents in the retrieval corpus (from your library)``), treat the response as document-based.
+- For document-based responses, end with a natural source line in this format:
+  ``Source: <document name>`` or ``Source: <doc 1>, <doc 2>``.
+- If document support is missing or uncertain, say so clearly instead of guessing.
+
+## Source lines for U.S. nutrition guidance
+
+When you give **estimated macros**, **calories per meal**, or a **sample meal plan** from general knowledge (not only the user’s uploads), close the answer with a **Source:** line that names the references, for example:
+``Source: Dietary Guidelines for Americans, 2020–2025; USDA FoodData Central``
+If user-library content meaningfully shaped the answer, **append** those document display names (from the catalog, when present) to the same line after a comma or semicolon.
 
 ## How to Respond to User Goals
 
@@ -131,7 +145,7 @@ When a user shares a personal goal, tailor your advice accordingly. Common goals
 
 ### Meal plans and macro breakdowns
 
-When you sketch a sample day of eating, a meal plan, or the user asks for macros, go beyond calories alone: for **each meal/snack** and for the **daily total**, include **protein (g), carbohydrate (g), and fat (g)** at minimum (add **fiber (g)** when it helps). Use a small summary table or clearly labeled lines so the macros are easy to scan. Treat all numbers as **rounded estimates** for illustration unless you are citing a specific database-backed food line; remind the reader that needs vary by person, activity, and health status. End-of-answer attribution for these cases is described in the **closing section at the end of this prompt** (after any document list).
+When you sketch a sample day of eating, a meal plan, or the user asks for macros, go beyond calories alone: for **each meal/snack** and for the **daily total**, include **protein (g), carbohydrate (g), and fat (g)** at minimum (add **fiber (g)** when it helps). Use a small summary table or clearly labeled lines so the macros are easy to scan. Treat all numbers as **rounded estimates** for illustration unless you are citing a specific database-backed food line; remind the reader that needs vary by person, activity, and health status. Always finish with the **Source:** line described above so readers know which references the numbers draw from.
 
 ---
 
@@ -346,6 +360,10 @@ _NUMBERED_CITATION_ERROR = (
     "Use a `Source: ...` line with document or guideline names, "
     "not numeric references such as [1]."
 )
+_RAG_QUOTA_ERROR = (
+    "The document search service is temporarily rate limited. "
+    "Please try again in a moment."
+)
 
 _STRUCTURED_NUTRITION_QUERY_PATTERN = re.compile(
     r"\b("
@@ -414,6 +432,192 @@ def _is_retryable(exc: BaseException) -> bool:
             return True
         return "quota" in msg or "rate" in msg
     return False
+def _metadata_get(obj: Any, *names: str) -> Any:
+    for name in names:
+        if isinstance(obj, dict) and name in obj:
+            return obj[name]
+        if obj.__class__.__module__.startswith("unittest.mock"):
+            if name not in getattr(obj, "__dict__", {}):
+                continue
+        value = getattr(obj, name, None)
+        if value is not None:
+            return value
+    return None
+
+
+def _metadata_items(obj: Any) -> list[tuple[str, Any]]:
+    if obj is None or isinstance(obj, (str, bytes, int, float, bool)):
+        return []
+    if isinstance(obj, dict):
+        return list(obj.items())
+    if isinstance(obj, (list, tuple, set)):
+        return []
+    if hasattr(obj, "items"):
+        try:
+            return list(obj.items())
+        except (TypeError, ValueError):
+            pass
+    out: list[tuple[str, Any]] = []
+    for name in dir(obj):
+        if name.startswith("_"):
+            continue
+        try:
+            value = getattr(obj, name)
+        except Exception:
+            continue
+        if callable(value):
+            continue
+        out.append((name, value))
+    return out
+
+
+def _metadata_children(obj: Any) -> list[Any]:
+    if obj is None or isinstance(obj, (str, bytes, int, float, bool)):
+        return []
+    if isinstance(obj, (list, tuple, set)):
+        return list(obj)
+    return [value for _, value in _metadata_items(obj)]
+
+
+def _string_value(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    return ""
+
+
+def _looks_like_rag_resource(value: str) -> bool:
+    return "/ragFiles/" in value or value.startswith("ragFiles/")
+
+
+def _looks_like_gcs_uri(value: str) -> bool:
+    return value.startswith("gs://")
+
+
+def _source_ref_from_metadata_node(node: Any) -> dict[str, str]:
+    fields = dict(_metadata_items(node))
+    ref: dict[str, str] = {}
+
+    for name in (
+        "rag_resource_name",
+        "ragResourceName",
+        "rag_file",
+        "ragFile",
+        "resource_name",
+        "resourceName",
+        "source_resource",
+        "sourceResource",
+        "name",
+    ):
+        value = _string_value(fields.get(name))
+        if value and _looks_like_rag_resource(value):
+            ref["rag_resource_name"] = value
+            break
+
+    for name in ("gcs_uri", "gcsUri"):
+        value = _string_value(fields.get(name))
+        if value and _looks_like_gcs_uri(value):
+            ref["gcs_uri"] = value
+            break
+
+    for name in ("uri", "source_uri", "sourceUri"):
+        value = _string_value(fields.get(name))
+        if not value:
+            continue
+        if _looks_like_rag_resource(value):
+            ref.setdefault("rag_resource_name", value)
+        elif _looks_like_gcs_uri(value):
+            ref.setdefault("gcs_uri", value)
+        else:
+            ref.setdefault("uri", value)
+
+    for name in (
+        "title",
+        "display_name",
+        "displayName",
+        "document_name",
+        "documentName",
+        "file_name",
+        "fileName",
+    ):
+        value = _string_value(fields.get(name))
+        if value:
+            ref["display_name"] = value
+            break
+
+    return ref
+
+
+def _source_ref_key(ref: dict[str, str]) -> tuple[str, str]:
+    for name in ("rag_resource_name", "gcs_uri", "uri", "display_name"):
+        value = (ref.get(name) or "").strip()
+        if value:
+            return (name, value.casefold())
+    return ("", "")
+
+
+def extract_grounded_source_refs(response: Any) -> list[dict[str, str]]:
+    """
+    Extract source identifiers from Vertex candidate metadata.
+
+    Vertex grounding/citation schemas vary between SDK versions and retrieval
+    backends, so this walks only candidate-level metadata containers and keeps
+    source-looking fields. Missing metadata simply produces an empty list.
+    """
+    candidates = _metadata_get(response, "candidates") or []
+    refs: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add_ref(ref: dict[str, str]) -> None:
+        ref = {k: v for k, v in ref.items() if v}
+        key = _source_ref_key(ref)
+        if not key[1] or key in seen:
+            return
+        seen.add(key)
+        refs.append(ref)
+
+    def walk(node: Any, depth: int = 0) -> None:
+        if node is None or depth > 8:
+            return
+        if isinstance(node, (str, bytes, int, float, bool)):
+            return
+        if isinstance(node, (list, tuple, set)):
+            for item in node:
+                walk(item, depth + 1)
+            return
+        add_ref(_source_ref_from_metadata_node(node))
+        for child in _metadata_children(node):
+            walk(child, depth + 1)
+
+    for candidate in candidates:
+        for metadata in (
+            _metadata_get(candidate, "grounding_metadata", "groundingMetadata"),
+            _metadata_get(candidate, "citation_metadata", "citationMetadata"),
+        ):
+            walk(metadata)
+    return refs
+
+
+def _is_retryable(exc: google_exceptions.GoogleAPIError) -> bool:
+    code = getattr(exc, "code", None) or getattr(exc, "grpc_status_code", None)
+    msg = str(exc).lower()
+    if code in _RETRYABLE_CODES:
+        return True
+    return "quota" in msg or "rate" in msg or "resource_exhausted" in msg
+
+
+def _google_error_message(exc: google_exceptions.GoogleAPIError) -> str:
+    return str(getattr(exc, "message", None) or str(exc))
+
+
+def _user_facing_google_error(exc: google_exceptions.GoogleAPIError) -> str:
+    msg = _google_error_message(exc)
+    folded = msg.casefold()
+    if (
+        "vertex vector search" in folded
+        and ("quota" in folded or "rate" in folded or "resource_exhausted" in folded)
+    ):
+        return _RAG_QUOTA_ERROR
+    return f"AI service error: {msg}"
 
 
 def _requires_document_citation(system_prompt_suffix: str) -> bool:
@@ -465,6 +669,16 @@ def _authority_sources_in_tail(tail: str) -> bool:
     if len(ch) < 8:
         return False
     return _authority_source_fragment_ok(ch)
+def _authority_sources_in_tail(tail: str) -> bool:
+    if not tail:
+        return False
+    guides = (
+        "dietary guideline" in tail
+        or "guidelines for americans" in tail
+        or ("guideline" in tail and "american" in tail)
+    )
+    data = "usda" in tail or "fooddata" in tail
+    return guides and data
 
 
 def _structured_nutrition_sources_ok(
@@ -523,17 +737,7 @@ def _has_valid_source_line(reply_text: str, system_prompt_suffix: str) -> bool:
     known_docs = set(_document_names_from_suffix(system_prompt_suffix))
     if not known_docs:
         return False
-    for name in source_names:
-        if name in known_docs:
-            return True
-        if _authority_source_fragment_ok(name):
-            return True
-        for doc in known_docs:
-            if len(doc) >= 4 and doc in name:
-                return True
-            if len(name) >= 5 and name in doc:
-                return True
-    return False
+    return any(name in known_docs for name in source_names)
 
 
 def run_chat(
@@ -558,6 +762,12 @@ def run_chat(
     text = (message or "").strip()
     if not text:
         return {"reply": "", "error": "Message is required."}
+    Retries up to 3 times on transient quota / rate-limit errors.
+    Returns ``{"reply": str, "error": str, "sources_used": list}``.
+    """
+    text = (message or "").strip()
+    if not text:
+        return {"reply": "", "error": "Message is required.", "sources_used": []}
 
     with _lock:
         base_prompt = _system_prompt
@@ -565,17 +775,17 @@ def run_chat(
     try:
         model = _get_model(effective)
     except EnvVarMissing as exc:
-        return {"reply": "", "error": str(exc)}
+        return {"reply": "", "error": str(exc), "sources_used": []}
     contents = _build_contents(history, text)
 
-    response: Any = None
+    last_exc: Exception | None = None
     for attempt in range(_MAX_RETRIES + 1):
         try:
             response = model.generate_content(contents)
             break
         except (ValueError, RuntimeError) as exc:
-            logger.exception("Vertex client configuration error")
-            return {"reply": "", "error": _GENERIC_AI_UNAVAILABLE}
+            logger.exception("Configuration error")
+            return {"reply": "", "error": str(exc), "sources_used": []}
         except google_auth_exceptions.DefaultCredentialsError:
             logger.warning("Application Default Credentials not found")
             return {
@@ -584,37 +794,45 @@ def run_chat(
                     "Google Application Default Credentials are not set. "
                     "Run: gcloud auth application-default login"
                 ),
+                "sources_used": [],
             }
-        except Exception as exc:
+        except google_exceptions.GoogleAPIError as exc:
+            last_exc = exc
             if attempt < _MAX_RETRIES and _is_retryable(exc):
-                wait = _backoff_seconds(attempt, exc)
-                detail = str(exc).replace("\n", " ")
-                if len(detail) > 280:
-                    detail = detail[:280] + "…"
+                wait = _RETRY_BACKOFF[attempt]
                 logger.warning(
-                    "Retryable Vertex AI error (attempt %d/%d), retrying in %.1fs: %s",
-                    attempt + 1,
-                    _MAX_RETRIES + 1,
-                    wait,
-                    detail,
+                    "Retryable Vertex AI error (attempt %d/%d), "
+                    "retrying in %.1fs: %s",
+                    attempt + 1, _MAX_RETRIES, wait, exc,
                 )
                 time.sleep(wait)
                 continue
-            logger.error(
-                "Vertex AI generate_content failed (final or non-retryable).",
-                exc_info=True,
-            )
-            return {"reply": "", "error": _GENERIC_AI_UNAVAILABLE}
-
-    if response is None:
-        logger.error("Vertex AI: generate_content returned no response object.")
-        return {"reply": "", "error": _GENERIC_AI_UNAVAILABLE}
+            logger.exception("Vertex AI API error")
+            return {
+                "reply": "",
+                "error": _user_facing_google_error(exc),
+                "sources_used": [],
+            }
+    else:
+        detail = (
+            _user_facing_google_error(last_exc)
+            if last_exc is not None
+            else "AI service error."
+        )
+        return {
+            "reply": "",
+            "error": detail,
+            "sources_used": [],
+        }
 
     if not response.candidates:
         return {
             "reply": "",
             "error": "No response from the model (blocked or empty).",
+            "sources_used": [],
         }
+
+    sources_used = extract_grounded_source_refs(response)
 
     try:
         reply_text = response.text or ""
@@ -622,24 +840,29 @@ def run_chat(
         return {
             "reply": "",
             "error": "The model returned no text (safety filter or empty parts).",
+            "sources_used": sources_used,
         }
 
     cleaned_reply = reply_text.strip()
     if _requires_document_citation(system_prompt_suffix) and _has_numbered_citation(
         cleaned_reply
     ):
-        return {"reply": "", "error": _NUMBERED_CITATION_ERROR}
+        return {"reply": "", "error": _NUMBERED_CITATION_ERROR, "sources_used": sources_used}
 
     if (
         _requires_document_citation(system_prompt_suffix)
         and _reply_references_known_document(cleaned_reply, system_prompt_suffix)
         and not _has_valid_source_line(cleaned_reply, system_prompt_suffix)
     ):
-        return {"reply": "", "error": _CITATION_REQUIRED_ERROR}
+        return {"reply": "", "error": _CITATION_REQUIRED_ERROR, "sources_used": sources_used}
 
     if _user_requests_structured_nutrition(text) and not _structured_nutrition_sources_ok(
         cleaned_reply, system_prompt_suffix
     ):
-        return {"reply": "", "error": _STRUCTURED_NUTRITION_SOURCE_ERROR}
+        return {
+            "reply": "",
+            "error": _STRUCTURED_NUTRITION_SOURCE_ERROR,
+            "sources_used": sources_used,
+        }
 
-    return {"reply": cleaned_reply, "error": ""}
+    return {"reply": cleaned_reply, "error": "", "sources_used": sources_used}
