@@ -104,7 +104,11 @@ def chat_api(request):
     """Handle a click on the nutrition info link here, creating a hidden prompt, 
     before proceeding with standard chat functions."""
     
-    nutrition_recipe = request.GET('nutrition')
+    from tools.prompt_router import classify_intent
+    from tools.vertex_chat import run_chat
+    from developer.models import QueryLog
+
+    nutrition_recipe = request.GET.get("nutrition")
 
     if nutrition_recipe:
         clean_name = nutrition_recipe.replace('+', ' ').replace('_', ' ')
@@ -126,10 +130,6 @@ def chat_api(request):
         return JsonResponse({"reply": "", "error": "Message is required."}, status=400)
 
     history = body.get("history")
-
-    from tools.prompt_router import build_chat_system_prompt_suffix, classify_intent
-    from tools.vertex_chat import run_chat
-    from developer.models import QueryLog
 
     # doc_index = _rag_documents_system_prompt_suffix()
     # result = run_chat(
