@@ -113,18 +113,6 @@
   const toggleBtn = document.getElementById('sidebarToggle');
   const openBtn = document.getElementById('sidebarOpenBtn');
 
-  document.addEventListener('click', function(e) {
-    if (e.target.tagName == 'a' && e.target.search.includes('nutrition=')) {
-        e.preventDefault();
-        
-        const urlParams = new URLSearchParams(e.target.search);
-        const recipe = urlParams.get('nutrition').replace(/_/g, ' ');
-        //double check this is the right function call
-        chat_api(`Provide nutrition facts for ${recipe}`);
-    }
-  });
-
-
  
   toggleBtn.addEventListener('click', () => {
     sidebar.classList.add('collapsed');

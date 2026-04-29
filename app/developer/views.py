@@ -48,7 +48,7 @@ def index(request):
     if not allowed_visitor(request.user):
         return redirect('home.index')
     template_data = {}
-    template_data['title'] = 'Developer Tools'
+    template_data['title'] = 'Admin Tools' if allowed_admin_visitor(request.user) else 'Developer Tools' 
     return render(request, 'developer/index.html', {'template_data': template_data})
 
 

@@ -108,16 +108,6 @@ def chat_api(request):
     from tools.vertex_chat import run_chat
     from developer.models import QueryLog
 
-    nutrition_recipe = request.GET.get("nutrition")
-
-    if nutrition_recipe:
-        clean_name = nutrition_recipe.replace('+', ' ').replace('_', ' ')
-        
-        message = f"Show me the nutrition facts (Calories, Macros) for {clean_name}."
-        
-        result = run_chat(message, history=None)
-        return JsonResponse(result)
-
     """Accept a JSON body with ``message`` and optional ``history``,
     forward to Vertex AI via ``run_chat``, and return the reply."""
     try:

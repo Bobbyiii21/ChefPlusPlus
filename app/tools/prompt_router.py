@@ -40,6 +40,7 @@ def _load_patterns_and_prompts():
         intent_name = intent_obj.name
         intent_prompts[intent_name] = intent_obj.prompt
         regexes = [p.regex for p in Pattern.objects.filter(intent=intent_obj)]
+        #print(regexes)
         if regexes:
             patterns.append((intent_name, regexes))
     
