@@ -58,28 +58,55 @@ def reference_downloads_for_reply(request, reply: str) -> list[dict[str, str]]:
     """
     Match ``Source:`` segments to uploaded :class:`~developer.models.DatabaseFile`
     rows (file-backed only) and return absolute download URLs.
+    Uses fuzzy matching to handle cases where the model's citation doesn't match exactly.
     """
     chunks = _source_line_chunks(reply)
     if not chunks:
         return []
 
+    # Get all available database files
+    all_files = {f.name.casefold(): f for f in DatabaseFile.objects.all()}
+    
     out: list[dict[str, str]] = []
-    seen_chunks: set[str] = set()
+    seen_files: set[str] = set()
+    
     for chunk in chunks:
         key = chunk.casefold()
-        if key in seen_chunks:
+        
+        # Try exact match first
+        if key in all_files:
+            dbf = all_files[key]
+            if dbf.name.casefold() not in seen_files and dbf.file:
+                seen_files.add(dbf.name.casefold())
+                try:
+                    url = request.build_absolute_uri(dbf.file.url)
+                    out.append({"name": dbf.name, "url": url})
+                except ValueError:
+                    pass
             continue
-        seen_chunks.add(key)
-        dbf = DatabaseFile.objects.filter(name__iexact=chunk).first()
-        if dbf is None:
-            continue
-        if not dbf.file:
-            continue
-        try:
-            url = request.build_absolute_uri(dbf.file.url)
-        except ValueError:
-            continue
-        out.append({"name": dbf.name, "url": url})
+        
+        # Try partial matching: find files where the chunk or file name contains the other
+        for file_key, dbf in all_files.items():
+            if dbf.name.casefold() in seen_files or not dbf.file:
+                continue
+            
+            # Match if chunk is in file name or file name is in chunk
+            if len(key) >= 4 and key in file_key:
+                seen_files.add(dbf.name.casefold())
+                try:
+                    url = request.build_absolute_uri(dbf.file.url)
+                    out.append({"name": dbf.name, "url": url})
+                except ValueError:
+                    pass
+                break
+            elif len(file_key) >= 4 and file_key in key:
+                seen_files.add(dbf.name.casefold())
+                try:
+                    url = request.build_absolute_uri(dbf.file.url)
+                    out.append({"name": dbf.name, "url": url})
+                except ValueError:
+                    pass
+                break
 
     return out
 
@@ -121,14 +148,11 @@ def chat_api(request):
 
     history = body.get("history")
 
-    # doc_index = _rag_documents_system_prompt_suffix()
-    # result = run_chat(
-    #     message,
-    #     history,
-    #     system_prompt_suffix=build_chat_system_prompt_suffix(message, doc_index),
+    # Include document catalog in system prompt so the model cites documents by their correct names
+    doc_index = _rag_documents_system_prompt_suffix()
 
     start = time.time()
-    result = run_chat(message, history)
+    result = run_chat(message, history, system_prompt_suffix=doc_index)
     elapsed = int((time.time() - start) * 1000)
 
     user = request.user if request.user.is_authenticated else None
