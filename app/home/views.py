@@ -1,10 +1,13 @@
 import json
 import re
+import time
 
 from django.http import JsonResponse
-from django.shortcuts import render
-from django.views.decorators.csrf import csrf_exempt
+from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import login_required
+from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.views.decorators.http import require_POST
+from recipes.models import Recipe
 
 from developer.models import DatabaseFile
 
@@ -55,28 +58,56 @@ def reference_downloads_for_reply(request, reply: str) -> list[dict[str, str]]:
     """
     Match ``Source:`` segments to uploaded :class:`~developer.models.DatabaseFile`
     rows (file-backed only) and return absolute download URLs.
+    Uses fuzzy matching to handle cases where the model's citation doesn't match exactly.
     """
     chunks = _source_line_chunks(reply)
     if not chunks:
         return []
 
+    # Get all available database files
+    all_files = {f.name.casefold(): f for f in DatabaseFile.objects.all()}
+    
     out: list[dict[str, str]] = []
-    seen: set[str] = set()
+    seen_files: set[str] = set()
+    
     for chunk in chunks:
         key = chunk.casefold()
-        if key in seen:
+        
+        # Try exact match first
+        if key in all_files:
+            dbf = all_files[key]
+            if dbf.name.casefold() not in seen_files and dbf.file:
+                seen_files.add(dbf.name.casefold())
+                try:
+                    url = request.build_absolute_uri(dbf.file.url)
+                    out.append({"name": dbf.name, "url": url})
+                except ValueError:
+                    pass
             continue
-        seen.add(key)
-        dbf = DatabaseFile.objects.filter(name__iexact=chunk).first()
-        if dbf is None:
-            continue
-        if not dbf.file:
-            continue
-        try:
-            url = request.build_absolute_uri(dbf.file.url)
-        except ValueError:
-            continue
-        out.append({"name": dbf.name, "url": url})
+        
+        # Try partial matching: find files where the chunk or file name contains the other
+        for file_key, dbf in all_files.items():
+            if dbf.name.casefold() in seen_files or not dbf.file:
+                continue
+            
+            # Match if chunk is in file name or file name is in chunk
+            if len(key) >= 4 and key in file_key:
+                seen_files.add(dbf.name.casefold())
+                try:
+                    url = request.build_absolute_uri(dbf.file.url)
+                    out.append({"name": dbf.name, "url": url})
+                except ValueError:
+                    pass
+                break
+            elif len(file_key) >= 4 and file_key in key:
+                seen_files.add(dbf.name.casefold())
+                try:
+                    url = request.build_absolute_uri(dbf.file.url)
+                    out.append({"name": dbf.name, "url": url})
+                except ValueError:
+                    pass
+                break
+
     return out
 
 
@@ -97,11 +128,18 @@ def chat(request):
 @csrf_exempt
 @require_POST
 def chat_api(request):
+    """Handle a click on the nutrition info link here, creating a hidden prompt, 
+    before proceeding with standard chat functions."""
+    
+    from tools.prompt_router import classify_intent
+    from tools.vertex_chat import run_chat
+    from developer.models import QueryLog
+
     """Accept a JSON body with ``message`` and optional ``history``,
     forward to Vertex AI via ``run_chat``, and return the reply."""
     try:
         body = json.loads(request.body)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError:
         return JsonResponse({"reply": "", "error": "Invalid JSON."}, status=400)
 
     message = (body.get("message") or "").strip()
@@ -110,14 +148,18 @@ def chat_api(request):
 
     history = body.get("history")
 
-    from tools.prompt_router import build_chat_system_prompt_suffix, classify_intent
-    from tools.vertex_chat import run_chat
-
+    # Include document catalog in system prompt so the model cites documents by their correct names
     doc_index = _rag_documents_system_prompt_suffix()
-    result = run_chat(
-        message,
-        history,
-        system_prompt_suffix=build_chat_system_prompt_suffix(message, doc_index),
+
+    start = time.time()
+    result = run_chat(message, history, system_prompt_suffix=doc_index)
+    elapsed = int((time.time() - start) * 1000)
+
+    user = request.user if request.user.is_authenticated else None
+    QueryLog.objects.create(
+        user=user,
+        response_time_ms=elapsed,
+        success=not result.get("error"),
     )
 
     status = 200 if not result.get("error") else 502
@@ -130,3 +172,36 @@ def chat_api(request):
     else:
         payload["reference_downloads"] = []
     return JsonResponse(payload, status=status)
+
+
+@csrf_protect
+@require_POST
+@login_required
+def save_recipe(request):
+    """Save a chatbot response as a recipe."""
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"success": False, "error": "Invalid JSON."}, status=400)
+
+    title = (body.get("title") or "").strip()
+    content = (body.get("content") or "").strip()
+
+    if not title:
+        return JsonResponse({"success": False, "error": "Recipe title is required."}, status=400)
+    if not content:
+        return JsonResponse({"success": False, "error": "Recipe content is required."}, status=400)
+
+    try:
+        recipe = Recipe.objects.create(
+            user=request.user,
+            title=title,
+            content=content
+        )
+        return JsonResponse({
+            "success": True,
+            "recipe_id": recipe.id,
+            "message": "Recipe saved successfully!"
+        })
+    except Exception as e:
+        return JsonResponse({"success": False, "error": str(e)}, status=500)

@@ -3,6 +3,7 @@ from . import views
 
 urlpatterns = [
     path('', views.index, name='developer.index'),
+    path('accuracy', views.accuracy, name='developer.accuracy'),
     path('files', views.database_files, name='developer.files'),
     path('files/delete/<int:file_id>', views.delete_database_file, name='developer.files.delete'),
     path('files/delete-corpus', views.delete_corpus_only_file, name='developer.files.delete_corpus'),
@@ -12,4 +13,6 @@ urlpatterns = [
         views.suggest_description_api,
         name='developer.api.suggest_description',
     ),
+    path('prompt-router', views.prompt_router_editor, name='developer.prompt_router'),
+    path('logs', views.usage_logs, name='developer.logs'),
 ]

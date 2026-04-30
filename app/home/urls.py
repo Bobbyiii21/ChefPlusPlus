@@ -6,4 +6,5 @@ urlpatterns = [
     path('about/', views.about, name='home.about'),
     path('chat/', views.chat, name='home.chat'),
     path('chat/api/', views.chat_api, name='home.chat_api'),
+    path('recipes/save/', views.save_recipe, name='home.save_recipe'),
 ]

@@ -1,53 +1,229 @@
 {% extends 'base.html' %}
 {% block content %}
-<section class="developer-hero py-5">
+<div class="p-3 mt-4">
   <div class="container">
-    <div class="row align-items-center gy-4">
-      <div class="col-lg-8">
-        <span class="eyebrow">Accuracy testing</span>
-        <h1>Compare responses against known questions.</h1>
-        <p class="lead">Use this page to evaluate how the assistant performs on verified questions and ensure answers are aligned with expected knowledge.</p>
-        <div class="hero-buttons mt-4">
-          <a class="btn btn-primary btn-lg me-3" href="#accuracy-checks">View test cases</a>
-          <a class="btn btn-outline-dark btn-lg" href="{% url 'developer.index' %}">Back to dashboard</a>
-        </div>
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-3">
+      <div>
+        <h3 class="section-header mb-1">Accuracy Testing</h3>
+        <p class="text-muted mb-0">Create known questions here, run them through the chatbot, and compare the latest response with the expected answer.</p>
       </div>
-      <div class="col-lg-4">
-        <div class="developer-summary-card p-4 rounded-4 shadow-sm bg-white">
-          <h2 class="mb-3">Validation focus</h2>
-          <ul class="developer-list list-unstyled mb-0">
-            <li>• Confirm answer correctness</li>
-            <li>• Identify model drift</li>
-            <li>• Improve response quality</li>
-          </ul>
-        </div>
+      <div class="d-flex gap-2">
+        <form method="POST">
+          {% csrf_token %}
+          <input type="hidden" name="subfield" value="run_all">
+          <button type="submit" class="btn-site">Run All Active Tests</button>
+        </form>
+        <button type="button" class="btn-site" data-bs-toggle="modal" data-bs-target="#addTestModal">+ New Source</button>
       </div>
     </div>
-  </div>
-</section>
+    <hr>
 
-<section class="developer-files py-5 bg-light" id="accuracy-checks">
-  <div class="container">
-    <div class="row gy-4">
+    {% if template_data.error %}
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+      {{ template_data.error }}
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+
+    {% if template_data.success %}
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+      {{ template_data.success }}
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+
+    <div class="row g-3 mb-4">
       <div class="col-md-4">
-        <div class="feature-card p-4 rounded-4 h-100">
-          <h3>Known questions</h3>
-          <p>Maintain a collection of verified questions to compare actual responses against expected answers.</p>
+        <div class="card p-3 h-100">
+          <div class="text-muted small mb-1">Total test cases</div>
+          <div class="fs-4">{{ template_data.total_cases }}</div>
         </div>
       </div>
       <div class="col-md-4">
-        <div class="feature-card p-4 rounded-4 h-100">
-          <h3>Response scoring</h3>
-          <p>Evaluate each answer for relevance, completeness, and factual accuracy.</p>
+        <div class="card p-3 h-100">
+          <div class="text-muted small mb-1">Active test cases</div>
+          <div class="fs-4">{{ template_data.active_cases }}</div>
         </div>
       </div>
       <div class="col-md-4">
-        <div class="feature-card p-4 rounded-4 h-100">
-          <h3>Iteration</h3>
-          <p>Use the results to refine prompts, adjust ranking, and improve retrieval before redeployment.</p>
+        <div class="card p-3 h-100">
+          <div class="text-muted small mb-1">Recent runs shown</div>
+          <div class="fs-4">{{ template_data.recent_runs|length }}</div>
         </div>
       </div>
     </div>
+
+    <!-- Add Test Case Modal -->
+    <div class="modal fade" id="addTestModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="addTestModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h1 class="modal-title fs-5" id="addSourceModalLabel"><strong>Add Source</strong></h1>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+<h5 class="mb-3">Create Test Case</h5>
+        <form method="POST">
+          {% csrf_token %}
+          <input type="hidden" name="subfield" value="create_case">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Name</label>
+              <input type="text" class="form-control" name="name" value="{{ template_data.form_values.name }}">
+            </div>
+            <div class="col-md-6 d-flex align-items-end">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="is_active" id="is_active" {% if template_data.form_values.is_active %}checked{% endif %}>
+                <label class="form-check-label" for="is_active">Active test case</label>
+              </div>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Question</label>
+              <textarea class="form-control" name="question" rows="3">{{ template_data.form_values.question }}</textarea>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Expected Answer</label>
+              <textarea class="form-control" name="expected_answer" rows="4">{{ template_data.form_values.expected_answer }}</textarea>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Required Terms</label>
+              <textarea class="form-control" name="required_terms" rows="2">{{ template_data.form_values.required_terms }}</textarea>
+              <div class="form-text">Separate terms with commas or new lines. Leave blank if you want manual review.</div>
+            </div>
+            <div class="col-12">
+              <button type="submit" class="btn-site">Create Test Case</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
-</section>
+ </div>
+    <!-- End Modal -->
+
+    {% if template_data.cases %}
+      {% for case in template_data.cases %}
+      <div class="card mb-3">
+        <button class="card-header d-flex justify-content-between align-items-center w-100 border-0 bg-transparent text-start"
+                type="button"
+                data-bs-toggle="collapse"
+                data-bs-target="#case-{{ forloop.counter }}"
+                aria-expanded="false"
+                aria-controls="case-{{ forloop.counter }}">
+          <div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <h5 class="mb-0">{{ case.name }}</h5>
+              {% if case.is_active %}
+              <span class="badge bg-success">Active</span>
+              {% else %}
+              <span class="badge bg-secondary">Inactive</span>
+              {% endif %}
+              {% if case.latest_run %}
+                {% if case.latest_run.status == 'pass' %}
+                <span class="badge bg-success">Pass</span>
+                {% elif case.latest_run.status == 'fail' %}
+                <span class="badge bg-danger">Fail</span>
+                {% elif case.latest_run.status == 'error' %}
+                <span class="badge bg-warning text-dark">Error</span>
+                {% else %}
+                <span class="badge bg-info text-dark">Needs Review</span>
+                {% endif %}
+              {% else %}
+                <span class="badge bg-secondary">Not Run</span>
+              {% endif %}
+            </div>
+            <div class="small text-muted">Click to view test case details</div>
+          </div>
+          <span class="material-symbols-outlined">expand_more</span>
+        </button>
+
+        <div class="collapse" id="case-{{ forloop.counter }}">
+          <div class="card-body">
+            <div class="row g-3 mb-3">
+              <div class="col-md-8">
+                <p class="mb-2"><strong>Question:</strong> {{ case.question }}</p>
+                <p class="mb-2"><strong>Expected answer:</strong> {{ case.expected_answer }}</p>
+                <p class="mb-0"><strong>Required terms:</strong>
+                  {% if case.term_list %}
+                    {{ case.required_terms }}
+                  {% else %}
+                    Manual review
+                  {% endif %}
+                </p>
+              </div>
+              <div class="col-md-4 d-flex align-items-start justify-content-md-end">
+                <form method="POST" class="w-100">
+                  {% csrf_token %}
+                  <input type="hidden" name="subfield" value="run_case">
+                  <input type="hidden" name="case_id" value="{{ case.id }}">
+                  <button type="submit" class="btn-site w-100">Run Test</button>
+                </form>
+              </div>
+            </div>
+
+            {% if case.latest_run %}
+            <div class="row g-3 mt-1">
+              <div class="col-md-6">
+                <div class="p-3 rounded border h-100">
+                  <div class="text-muted small mb-1">Latest chatbot response</div>
+                  <div style="white-space: pre-wrap;">{{ case.latest_run.actual_answer|default:"No response saved." }}</div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="p-3 rounded border h-100">
+                  <div class="text-muted small mb-1">Latest run details</div>
+                  <p class="mb-2"><strong>Time:</strong> {{ case.latest_run.response_time_ms }} ms</p>
+                  <p class="mb-2"><strong>Ran at:</strong> {{ case.latest_run.created_at|date:"Y-m-d H:i:s" }}</p>
+                  {% if case.latest_run.error_message %}
+                  <p class="mb-2"><strong>Error:</strong> {{ case.latest_run.error_message }}</p>
+                  {% endif %}
+                  {% if case.latest_run.missing_terms %}
+                  <p class="mb-0"><strong>Missing terms:</strong> {{ case.latest_run.missing_terms }}</p>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+            {% else %}
+            <p class="text-muted mb-0">This test case has not been run yet.</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+    <div class="card p-4">
+      <p class="mb-2">No accuracy test cases exist yet.</p>
+      <p class="text-muted mb-0">Create one on this page, then run it here.</p>
+    </div>
+    {% endif %}
+
+    {% if template_data.recent_runs %}
+    <div class="mt-4">
+      <h5 class="mb-3">Recent Runs</h5>
+      <div class="table-responsive">
+        <table class="table table-bordered table-hover">
+          <thead class="table-dark">
+            <tr>
+              <th>Test Case</th>
+              <th>Status</th>
+              <th>Response Time</th>
+              <th>Timestamp</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for run in template_data.recent_runs %}
+            <tr>
+              <td>{{ run.test_case.name }}</td>
+              <td>{{ run.get_status_display }}</td>
+              <td>{{ run.response_time_ms }} ms</td>
+              <td>{{ run.created_at|date:"Y-m-d H:i:s" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
 {% endblock content %}

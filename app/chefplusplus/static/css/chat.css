@@ -53,9 +53,9 @@ a.sidebar-logo:hover {
 }
  
 .sidebar-logo {
-  font-family: 'DM Serif Display', serif;
+  font-family: 'IBM Plex Serif', serif;
   font-size: 1.25rem;
-  font-weight: 400;
+  font-weight: 500;
   color: var(--text);
   white-space: nowrap;
 }
@@ -159,9 +159,16 @@ a.sidebar-logo:hover {
  
 .chat-header nav a {
   font-family: 'IBM Plex Sans', sans-serif;
-  font-size: 0.7rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 1rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text);
+  transition: color 0.15s;
+}
+
+.chat-header nav a:hover {
+  color: var(--primary);
 }
  
 /* --- Messages area --- */
@@ -200,25 +207,29 @@ a.sidebar-logo:hover {
  
 .empty-state .big-icon {
   margin-bottom: 0.5rem;
-  opacity: 0.4;
 }
  
 .empty-state .big-icon .material-symbols-outlined {
   font-size: 4rem;
 }
+
+.empty-state .big-icon img {
+  width: 4rem;
+  height: 4rem;
+  object-fit: contain;
+}
  
 .empty-state h2 {
-  font-family: 'DM Serif Display', serif;
-  font-size: 2rem;
-  font-weight: 400;
-  font-style: italic;
+  font-family: 'IBM Plex Serif', serif;
+  font-size: 2.2rem;
+  font-weight: 500;
   color: var(--text);
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
 }
  
 .empty-state p {
   font-family: 'IBM Plex Serif', serif;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   color: var(--text);
   max-width: 300px;
   line-height: 1.6;
@@ -262,7 +273,31 @@ a.sidebar-logo:hover {
   animation: fadeUp 0.2s ease;
 }
  
-.message.assistant { align-items: flex-start; }
+.message.assistant {
+  align-items: flex-start;
+  flex-direction: row;
+  gap: 0.6rem;
+}
+
+.assistant-avatar {
+  flex-shrink: 0;
+  align-self: flex-start;
+  width: 3.5rem;
+  height: 3.5rem;
+}
+
+.assistant-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.assistant-content-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
  
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(6px); }
@@ -282,7 +317,7 @@ a.sidebar-logo:hover {
   max-width: 82%;
   padding: 0.75rem 1rem;
   border-radius: 12px;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   font-weight: 400;
   line-height: 1.65;
   letter-spacing: 0.01em;
@@ -298,8 +333,7 @@ a.sidebar-logo:hover {
 .message.assistant .message-bubble {
   background: none;
   border: none;
-  padding-left: 0;
-  padding-right: 0;
+  padding: 0;
   max-width: 100%;
   color: var(--text);
   font-family: 'IBM Plex Serif', serif;
@@ -375,7 +409,7 @@ a.sidebar-logo:hover {
 .message-bubble.markdown-body h2,
 .message-bubble.markdown-body h3,
 .message-bubble.markdown-body h4 {
-  font-family: 'DM Serif Display', serif;
+  font-family: 'IBM Plex Serif', serif;
   font-weight: 400;
   margin: 1em 0 0.4em;
   line-height: 1.3;
@@ -574,10 +608,9 @@ a.sidebar-logo:hover {
  
 .chat-topnav-link {
   font-family: 'IBM Plex Sans', sans-serif;
-  font-size: 0.7rem;
+  font-size: 0.85rem;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text);
   text-decoration: none;
   transition: color 0.15s;
 }
@@ -599,6 +632,274 @@ a.sidebar-logo:hover {
   opacity: 0.85;
 }
 
+/* --- Message actions (save button) --- */
+.message-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding: 0 0.2rem;
+}
+
+.save-recipe-btn {
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 0.75rem;
+  padding: 0.35rem 0.75rem;
+  background: var(--primary);
+  color: var(--background);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  letter-spacing: 0.04em;
+}
+
+.save-recipe-btn:hover {
+  opacity: 0.85;
+}
+
+.save-recipe-btn:active {
+  opacity: 0.7;
+}
+
+/* --- Modal --- */
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-content {
+  background-color: var(--surface);
+  margin: 10% auto;
+  padding: 0;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  animation: slideDown 0.2s ease;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  border-radius: 6px;
+  transition: color 0.15s;
+}
+
+.modal-close:hover {
+  color: var(--text);
+}
+
+.modal-body {
+  padding: 1.5rem;
+}
+
+.form-group {
+  margin-bottom: 1.25rem;
+}
+
+.form-group:last-child {
+  margin-bottom: 0;
+}
+
+.form-group label {
+  display: block;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.form-group input,
+.form-group textarea {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background-color: var(--background);
+  color: var(--text);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 0.9rem;
+  transition: border-color 0.15s;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(198, 142, 93, 0.1);
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 120px;
+}
+
+.form-group input[readonly],
+.form-group textarea[readonly] {
+  background-color: var(--surface);
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
+.form-group small {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.35rem;
+}
+
+.modal-footer {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  padding: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.modal-btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: opacity 0.15s;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.modal-btn-primary {
+  background: var(--primary);
+  color: var(--background);
+}
+
+.modal-btn-primary:hover {
+  opacity: 0.85;
+}
+
+.modal-btn-secondary {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.modal-btn-secondary:hover {
+  border-color: var(--text-muted);
+}
+
+/* --- Responsive --- */
+@media (max-width: 768px) {
+  .modal-content {
+    margin: 50% auto;
+    width: 95%;
+  }
+}
+
+/* --- Recipe content preview in modal --- */
+.recipe-content-preview {
+  background-color: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  max-height: 250px;
+  overflow-y: auto;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.recipe-content-preview p {
+  margin-bottom: 0.6rem;
+}
+
+.recipe-content-preview p:last-child {
+  margin-bottom: 0;
+}
+
+.recipe-content-preview h1,
+.recipe-content-preview h2,
+.recipe-content-preview h3,
+.recipe-content-preview h4 {
+  margin: 0.8rem 0 0.4rem;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.recipe-content-preview ul,
+.recipe-content-preview ol {
+  margin: 0.6rem 0;
+  padding-left: 1.5rem;
+}
+
+.recipe-content-preview li {
+  margin-bottom: 0.3rem;
+}
+
+.recipe-content-preview code {
+  background-color: var(--surface);
+  padding: 0.2rem 0.4rem;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 0.85em;
+}
+
+.recipe-content-preview pre {
+  background-color: var(--surface);
+  padding: 0.75rem;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin: 0.6rem 0;
+}
+
+.recipe-content-preview blockquote {
+  border-left: 3px solid var(--primary);
+  padding-left: 0.75rem;
+  margin: 0.6rem 0;
+  color: var(--text-muted);
+}
 /* --- Intent badge (matches server-side classify_intent) --- */
 .intent-badge {
   display: inline-block;
